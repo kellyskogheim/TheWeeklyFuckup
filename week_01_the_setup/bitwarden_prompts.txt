@@ -1,0 +1,20 @@
+How do I get started with using Bitwarden for password management |
+
+I've been told Bitwarden is safer than say Google Password Manager or my iphone password manager, but I don't understand why. Can you please explain the pros and cons of different password management systems? |
+
+Let me try rephrasing and you can tell me if my understanding is correct. 
+
+1) With Bitwarden, only you hold the key. If Bitwarden has a data breach, is there a risk that your master password and therefore other passwords are accessible to bad actors? If not, why not? For apple and google managers, it sounds more likely that a hacker could somehow infiltrate your browser (rather than apple or google or bitwarden) and since those managers store passwords there, they would be accessible?
+
+2) Bitwarden is not tied to a specific OS, device, or browser like the google or apple, so it's not platform-biased. Are there reports of Bitwarden working better on some platforms than others? It seems like it would have had to be created on a specific platform - so how do they avoid this platform bias?
+
+3) The code is open-source, so you aren't just trusting the proprietary corporation's security. You can literally go in and see the source code in git hub. Does this in any way make it more risky? Since bad actors also have access to the source code? Also I doubt many people have the time or knowledge-level to truly audit the Bitwarden source code.
+
+4) There's more flexibility in what you can store in the bitwarden vault. I haven't explored this yet, but it sounds like you can store secret messages and identification cards or things as well as just passwords and/or credit cards. What about racy photos? If a couple is wanting to make a home porno collection for themselves, would using something like bitwarden for storage make it less susceptible to a leak?
+
+Please evaluate my understanding and answer my never-ending questions in a way that hopefully doesn't generate more - as like most humans - I don't really have time for this. |
+
+Not right now. Thanks. I do have a follow-up question on 1. Why can't the encrypted passwords just be decrypted? |
+
+
+Thanks. Is this conversation being saved to my Gemini account? |
