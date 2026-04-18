@@ -1,9 +1,12 @@
 """
-Running route generator - dual-mode CLI and REST API.
+Running route generator CLI - generates optimal routes from an address and distance.
 
-Modes:
-  - CLI: python main.py "address" distance unit
-  - API: python main.py (no args)
+Usage:
+  python main.py "address" distance unit
+  
+Example:
+  python main.py "Central Park, NYC" 5 miles
+  python main.py "Eiffel Tower, Paris" 3 km
 """
 
 import sys
@@ -41,7 +44,7 @@ def cli_mode():
         from network import download_walk_network
         from waypoints import generate_route_candidates
         from routing import process_and_rank_routes
-        from output import generate_summary_report
+        from output import generate_summary_report, export_gpx
     except ImportError as e:
         logger.error(f"Failed to import required modules: {e}")
         sys.exit(1)
@@ -81,41 +84,36 @@ def cli_mode():
     try:
         report = generate_summary_report(routes_ranked)
         print("\n" + report)
+        
+        # Export GPX files for top 3 routes
+        gpx_count = min(3, len(routes_ranked))
+        logger.info(f"Exporting GPX files for top {gpx_count} routes")
+        
+        for route in routes_ranked[:gpx_count]:
+            rank = route.get('rank', '?')
+            try:
+                gpx_filename = f"route_{rank}.gpx"
+                gpx_content = export_gpx(route['route_nodes'], graph, gpx_filename)
+                
+                with open(gpx_filename, 'w') as f:
+                    f.write(gpx_content)
+                
+                print(f"✓ Exported {gpx_filename}")
+                logger.info(f"Exported route #{rank} to {gpx_filename}")
+            except Exception as e:
+                logger.warning(f"Failed to export GPX for route #{rank}: {e}")
+        
         logger.info("Route generation complete")
     except Exception as e:
         logger.error(f"Output generation failed: {e}")
         sys.exit(1)
 
 
-def api_mode():
-    """
-    API mode: start FastAPI server for REST API.
-    """
-    logger.info("Starting API mode")
-    
-    try:
-        from api import app
-        import uvicorn
-    except ImportError as e:
-        logger.error(f"Failed to import API modules: {e}")
-        sys.exit(1)
-    
-    logger.info("FastAPI server starting on http://localhost:8000")
-    logger.info("API docs available at http://localhost:8000/docs")
-    
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
 def main():
     """
-    Main entry point: detect mode and run accordingly.
+    Main entry point for CLI route generation.
     """
-    if len(sys.argv) > 1:
-        # CLI mode: arguments provided
-        cli_mode()
-    else:
-        # API mode: no arguments
-        api_mode()
+    cli_mode()
 
 
 if __name__ == "__main__":
