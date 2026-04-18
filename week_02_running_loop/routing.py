@@ -9,8 +9,13 @@ import networkx as nx
 logger = logging.getLogger(__name__)
 
 # Feature-based weight multipliers (lower = more desirable)
-WEIGHT_PRIMARY_ROAD = 2.0  # Penalize main roads
-WEIGHT_TRUNK_ROAD = 1.5    # Penalize trunk roads
+WEIGHT_PRIMARY_ROAD = 3.0  # Penalize main roads heavily
+WEIGHT_TRUNK_ROAD = 2.5    # Penalize trunk roads
+WEIGHT_SECONDARY_ROAD = 1.5  # Slightly penalize secondary roads
+WEIGHT_TERTIARY_ROAD = 1.2   # Slightly penalize tertiary roads
+WEIGHT_FOOTWAY = 0.3       # Strongly reward dedicated footways
+WEIGHT_PATH = 0.4          # Reward paths
+WEIGHT_PEDESTRIAN = 0.3    # Reward pedestrian zones
 WEIGHT_PARK = 0.5          # Reward parks
 WEIGHT_WATER = 0.7         # Reward water features
 WEIGHT_FOREST = 0.6        # Reward forests
@@ -51,7 +56,7 @@ def weight_function(u: int, v: int, d: Dict[str, Any], graph: nx.MultiDiGraph) -
     # Start with multiplier of 1.0
     multiplier = 1.0
     
-    # Penalize main roads
+    # Penalize and reward road types
     highway_type = d.get('highway', '')
     if isinstance(highway_type, list):
         highway_type = highway_type[0]
@@ -60,6 +65,16 @@ def weight_function(u: int, v: int, d: Dict[str, Any], graph: nx.MultiDiGraph) -
         multiplier *= WEIGHT_PRIMARY_ROAD
     elif highway_type == 'trunk':
         multiplier *= WEIGHT_TRUNK_ROAD
+    elif highway_type == 'secondary':
+        multiplier *= WEIGHT_SECONDARY_ROAD
+    elif highway_type == 'tertiary':
+        multiplier *= WEIGHT_TERTIARY_ROAD
+    elif highway_type == 'footway':
+        multiplier *= WEIGHT_FOOTWAY  # Strongly reward dedicated footways
+    elif highway_type == 'path':
+        multiplier *= WEIGHT_PATH
+    elif highway_type == 'pedestrian':
+        multiplier *= WEIGHT_PEDESTRIAN  # Reward pedestrian zones
     
     # Reward scenic/pleasant features
     if d.get('leisure') == 'park':
@@ -240,7 +255,9 @@ def score_route(
 def process_and_rank_routes(
     graph: nx.MultiDiGraph,
     route_candidates: List[Tuple[int, List[int]]],
-    target_distance_m: float
+    target_distance_m: float,
+    start_lat: float = None,
+    start_lon: float = None
 ) -> List[Dict[str, Any]]:
     """
     Build and score all route candidates, returning ranked list.
@@ -249,6 +266,8 @@ def process_and_rank_routes(
         graph: NetworkX graph
         route_candidates: List of (waypoint_count, waypoints) tuples
         target_distance_m: Target distance for scoring
+        start_lat: Starting latitude (to ensure route closes at start)
+        start_lon: Starting longitude (to ensure route closes at start)
     
     Returns:
         List of route dicts sorted by score (highest first):
@@ -259,11 +278,23 @@ def process_and_rank_routes(
                 'waypoint_count': int,
                 'route_nodes': [int, ...],
                 'distance_m': float,
-                'distance_variance': float
+                'distance_variance': float,
+                'apple_maps_url': str
             },
             ...
         ]
     """
+    import osmnx as ox
+    
+    # Find start node if coordinates provided
+    start_node = None
+    if start_lat is not None and start_lon is not None:
+        try:
+            start_node = ox.nearest_nodes(graph, start_lon, start_lat)
+            logger.debug(f"Start node for closing loop: {start_node}")
+        except Exception as e:
+            logger.warning(f"Could not find start node for closing: {e}")
+    
     routes_with_scores = []
     
     for waypoint_count, waypoints in route_candidates:
@@ -271,13 +302,36 @@ def process_and_rank_routes(
             # Build the complete route
             route_nodes, total_distance = build_route(graph, waypoints, target_distance_m)
             
+            # Ensure route closes at the starting location
+            if start_node is not None and len(route_nodes) > 0 and route_nodes[-1] != start_node:
+                # Add start node to the end to close the loop
+                route_nodes = route_nodes + [start_node]
+                # Estimate distance for the closing segment
+                try:
+                    if len(route_nodes) >= 2:
+                        edge_data = graph[route_nodes[-2]][route_nodes[-1]]
+                        if isinstance(edge_data, dict):
+                            closing_distance = edge_data.get('length', 50.0)
+                        else:
+                            closing_distance = edge_data[0].get('length', 50.0)
+                        total_distance += closing_distance
+                except (KeyError, IndexError):
+                    # Nodes not directly connected, use default distance
+                    total_distance += 50.0
+            
             # Score the route
             score = score_route(total_distance, waypoint_count, target_distance_m)
             distance_variance = (total_distance - target_distance_m) / target_distance_m
             
             # Generate Apple Maps URL for the route
-            from output import route_to_apple_maps_url
-            apple_maps_url = route_to_apple_maps_url(route_nodes, graph)
+            apple_maps_url = ""
+            try:
+                from output import route_to_apple_maps_url
+                apple_maps_url = route_to_apple_maps_url(route_nodes, graph)
+                logger.debug(f"Generated Apple Maps URL: {apple_maps_url[:80]}...")
+            except Exception as e:
+                logger.warning(f"Failed to generate Apple Maps URL: {e}")
+                apple_maps_url = ""
             
             routes_with_scores.append({
                 'waypoint_count': waypoint_count,

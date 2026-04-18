@@ -44,7 +44,7 @@ def cli_mode():
         from network import download_walk_network
         from waypoints import generate_route_candidates
         from routing import process_and_rank_routes
-        from output import generate_summary_report, export_gpx
+        from output import generate_summary_report
     except ImportError as e:
         logger.error(f"Failed to import required modules: {e}")
         sys.exit(1)
@@ -74,7 +74,7 @@ def cli_mode():
     
     # Phase 4: Routing & Scoring
     try:
-        routes_ranked = process_and_rank_routes(graph, route_candidates, distance_m)
+        routes_ranked = process_and_rank_routes(graph, route_candidates, distance_m, start_lat=lat, start_lon=lon)
         logger.info(f"Ranked {len(routes_ranked)} routes by score")
     except Exception as e:
         logger.error(f"Route processing failed: {e}")
@@ -84,25 +84,6 @@ def cli_mode():
     try:
         report = generate_summary_report(routes_ranked)
         print("\n" + report)
-        
-        # Export GPX files for top 3 routes
-        gpx_count = min(3, len(routes_ranked))
-        logger.info(f"Exporting GPX files for top {gpx_count} routes")
-        
-        for route in routes_ranked[:gpx_count]:
-            rank = route.get('rank', '?')
-            try:
-                gpx_filename = f"route_{rank}.gpx"
-                gpx_content = export_gpx(route['route_nodes'], graph, gpx_filename)
-                
-                with open(gpx_filename, 'w') as f:
-                    f.write(gpx_content)
-                
-                print(f"✓ Exported {gpx_filename}")
-                logger.info(f"Exported route #{rank} to {gpx_filename}")
-            except Exception as e:
-                logger.warning(f"Failed to export GPX for route #{rank}: {e}")
-        
         logger.info("Route generation complete")
     except Exception as e:
         logger.error(f"Output generation failed: {e}")
