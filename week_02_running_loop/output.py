@@ -72,25 +72,20 @@ def route_to_apple_maps_url(
     """
     Format an Apple Maps URL for the route waypoints.
     
-    Apple Maps URL format includes waypoints as coordinates with all intermediate stops.
+    Apple Maps URL format includes waypoints as coordinates.
+    Includes up to 5 waypoints for clarity (start → waypoints → end).
     
     Args:
         route_nodes: List of node IDs
         graph: NetworkX graph containing coordinates
     
     Returns:
-        Apple Maps URL string with all waypoints as stops
+        Apple Maps URL string
     """
     waypoints = []
     
     for node_id in route_nodes:
-        if node_id is None or node_id not in graph.nodes:
-            continue
-        
         node_data = graph.nodes[node_id]
-        if node_data is None:
-            continue
-            
         lat = node_data.get('y')
         lon = node_data.get('x')
         
@@ -101,32 +96,29 @@ def route_to_apple_maps_url(
         logger.warning("No waypoints for Apple Maps URL")
         return ""
     
-    # Include all waypoints if reasonable number, otherwise sample to keep URL reasonable
-    # Apple Maps can handle ~25+ waypoints in a URL (each ~30-35 chars, typical URL limit 2048)
-    if len(waypoints) <= 25:
-        # Include all waypoints
-        waypoints_to_use = waypoints
-    else:
-        # Sample waypoints evenly to stay within reasonable URL length
-        step = max(1, len(waypoints) // 20)  # Target ~20 waypoints max
-        waypoints_to_use = waypoints[::step]
-        # Ensure start and end are included
-        if len(waypoints_to_use) > 0 and waypoints_to_use[0] != waypoints[0]:
-            waypoints_to_use = [waypoints[0]] + waypoints_to_use
-        if len(waypoints_to_use) > 0 and waypoints_to_use[-1] != waypoints[-1]:
-            waypoints_to_use = waypoints_to_use + [waypoints[-1]]
+    # Use start point and sample intermediate waypoints to avoid URL length issues
+    # Apple Maps can handle ~5-10 waypoints before the URL gets too long
+    sampled_waypoints = [waypoints[0]]  # Start
     
-    # Build Apple Maps URL with all waypoints as intermediate stops (daddr)
-    # Format: https://maps.apple.com/?saddr=start&daddr=stop1&daddr=stop2...&mode=walking
-    if len(waypoints_to_use) == 1:
-        url = f"https://maps.apple.com/?ll={waypoints_to_use[0][0]},{waypoints_to_use[0][1]}&mode=walking"
+    if len(waypoints) > 2:
+        # Sample intermediate waypoints evenly
+        step = max(1, (len(waypoints) - 2) // 3)  # Up to 3 intermediate waypoints
+        sampled_waypoints.extend(waypoints[step:-1:step])
+    
+    sampled_waypoints.append(waypoints[-1])  # End
+    
+    # Build Apple Maps URL with waypoints
+    # Format: https://maps.apple.com/?saddr=start&daddr=waypoint1&daddr=waypoint2...&mode=walking
+    # mode=walking specifies walking directions
+    if len(sampled_waypoints) == 1:
+        url = f"https://maps.apple.com/?ll={sampled_waypoints[0][0]},{sampled_waypoints[0][1]}&mode=walking"
     else:
-        url = f"https://maps.apple.com/?saddr={waypoints_to_use[0][0]},{waypoints_to_use[0][1]}"
-        for wp in waypoints_to_use[1:]:
+        url = f"https://maps.apple.com/?saddr={sampled_waypoints[0][0]},{sampled_waypoints[0][1]}"
+        for wp in sampled_waypoints[1:]:
             url += f"&daddr={wp[0]},{wp[1]}"
         url += "&mode=walking"  # Walking mode
     
-    logger.debug(f"Generated Apple Maps URL with {len(waypoints_to_use)}/{len(waypoints)} waypoints")
+    logger.debug(f"Generated Apple Maps URL for {len(waypoints)} waypoints")
     return url
 
 
