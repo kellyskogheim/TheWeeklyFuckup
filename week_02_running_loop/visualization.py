@@ -71,7 +71,6 @@ def generate_route_maps(
             distance_variance = route['distance_variance']
             waypoint_count = route['waypoint_count']
             route_nodes = route['route_nodes']
-            apple_maps_url = route.get('apple_maps_url', '')
             
             # Extract coordinates from route nodes
             route_coords = []
@@ -154,10 +153,6 @@ def generate_route_maps(
                 <b>Score:</b> {score:.1f}/100<br>
                 <b>Distance:</b> {distance_m:.0f}m ({distance_variance:+.1%})<br>
                 <b>Waypoints:</b> {waypoint_count}<br>
-                <hr style="margin: 5px 0;">
-                <a href="{apple_maps_url}" target="_blank" style="color: blue; text-decoration: underline;">
-                    Open in Apple Maps →
-                </a>
             </div>
             """
             

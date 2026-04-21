@@ -46,14 +46,6 @@ python main.py "Eiffel Tower, Paris" 3 km
 python main.py "123 Main St, Boston" 10 km
 ```
 
-### API Mode
-
-Run without arguments to start an API server:
-
-```bash
-python main.py
-```
-
 ## Output
 
 The tool generates:
