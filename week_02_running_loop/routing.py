@@ -323,23 +323,12 @@ def process_and_rank_routes(
             score = score_route(total_distance, waypoint_count, target_distance_m)
             distance_variance = (total_distance - target_distance_m) / target_distance_m
             
-            # Generate Apple Maps URL for the route
-            apple_maps_url = ""
-            try:
-                from output import route_to_apple_maps_url
-                apple_maps_url = route_to_apple_maps_url(route_nodes, graph)
-                logger.debug(f"Generated Apple Maps URL: {apple_maps_url[:80]}...")
-            except Exception as e:
-                logger.warning(f"Failed to generate Apple Maps URL: {e}")
-                apple_maps_url = ""
-            
             routes_with_scores.append({
                 'waypoint_count': waypoint_count,
                 'route_nodes': route_nodes,
                 'distance_m': total_distance,
                 'distance_variance': distance_variance,
-                'score': score,
-                'apple_maps_url': apple_maps_url
+                'score': score
             })
             
             logger.debug(

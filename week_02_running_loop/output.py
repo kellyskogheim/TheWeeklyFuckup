@@ -1,68 +1,12 @@
 """
-Output module: generate GPX files, Apple Maps URLs, and summary reports.
+Output module: generate Apple Maps URLs and summary reports.
 """
 
 import logging
-from typing import List, Dict, Any, Optional
-import gpxpy
-import gpxpy.gpx
+from typing import List, Dict, Any
 import networkx as nx
 
 logger = logging.getLogger(__name__)
-
-
-def export_gpx(
-    route_nodes: List[int],
-    graph: nx.MultiDiGraph,
-    filename: str
-) -> str:
-    """
-    Export a route to a GPX file.
-    
-    Args:
-        route_nodes: List of node IDs forming the route
-        graph: NetworkX graph containing node coordinates
-        filename: Output filename (e.g., 'route_1.gpx')
-    
-    Returns:
-        The GPX file content as a string
-    
-    Raises:
-        ValueError: If route cannot be converted to GPX
-    """
-    try:
-        gpx = gpxpy.gpx.GPX()
-        gpx_track = gpxpy.gpx.GPXTrack()
-        gpx.tracks.append(gpx_track)
-        
-        # Create track segment
-        gpx_segment = gpxpy.gpx.GPXTrackSegment()
-        gpx_track.segments.append(gpx_segment)
-        
-        # Add waypoints
-        for node_id in route_nodes:
-            node_data = graph.nodes[node_id]
-            lat = node_data.get('y')
-            lon = node_data.get('x')
-            
-            if lat is None or lon is None:
-                logger.warning(f"Node {node_id} missing coordinates, skipping")
-                continue
-            
-            gpx_point = gpxpy.gpx.GPXTrackPoint(latitude=lat, longitude=lon)
-            gpx_segment.points.append(gpx_point)
-        
-        if not gpx_segment.points:
-            raise ValueError("No valid waypoints to export")
-        
-        gpx_str = gpx.to_xml()
-        logger.debug(f"Generated GPX with {len(gpx_segment.points)} points")
-        
-        return gpx_str
-        
-    except Exception as e:
-        logger.error(f"Failed to export GPX: {e}")
-        raise ValueError(f"Cannot export route to GPX: {e}") from e
 
 
 def route_to_apple_maps_url(
@@ -122,35 +66,6 @@ def route_to_apple_maps_url(
     return url
 
 
-def format_route_stats(
-    distance_m: float,
-    target_distance_m: float,
-    waypoint_count: int,
-    score: float
-) -> Dict[str, Any]:
-    """
-    Format route statistics for display.
-    
-    Args:
-        distance_m: Actual route distance
-        target_distance_m: Target distance
-        waypoint_count: Number of waypoints
-        score: Route score (0-100)
-    
-    Returns:
-        Dictionary of formatted stats
-    """
-    distance_variance = (distance_m - target_distance_m) / target_distance_m
-    
-    return {
-        'distance_m': round(distance_m, 1),
-        'target_distance_m': round(target_distance_m, 1),
-        'distance_variance_pct': round(distance_variance * 100, 1),
-        'waypoint_count': waypoint_count,
-        'score': round(score, 1)
-    }
-
-
 def generate_summary_report(routes_ranked: List[Dict[str, Any]]) -> str:
     """
     Generate a text summary report of all ranked routes.
@@ -179,14 +94,11 @@ def generate_summary_report(routes_ranked: List[Dict[str, Any]]) -> str:
         distance_m = route.get('distance_m', 0)
         distance_variance = route.get('distance_variance', 0)
         waypoint_count = route.get('waypoint_count', 0)
-        apple_maps_url = route.get('apple_maps_url', '')
         
         lines.append(f"Rank #{rank}")
         lines.append(f"  Score:          {score:.1f}/100")
         lines.append(f"  Distance:       {distance_m:.0f}m ({distance_variance:+.1%})")
         lines.append(f"  Waypoints:      {waypoint_count}")
-        if apple_maps_url:
-            lines.append(f"  Apple Maps:     {apple_maps_url}")
         lines.append("")
     
     lines.append("=" * 80)
