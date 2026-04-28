@@ -1,0 +1,13 @@
+User: I want some help polishing my illustrations for a story book that I wrote my mom for Mother’s Day. I want suggestions on how to color in and finish off the illustrations. I don’t want any major rework. I just want to have fun. Feel free to add small tips about drawing or coloring with Prismacolor pencil, but act in the capacity of a teacher or tutor. You can also suggest colors to use perhaps acting more as an editor. I’ve written and sketched the book in a sketchbook and am now using prismacolor pencils and a fine line marker to finish it off. Is there anymore information that would help you assist me or should I start with loading a photo of my cover page?
+
+User: Here’s my cover page and the tools that I am working with. I’m not positive on vibe, but let’s say “bold and modern”
+
+User: This sounds good, but it’s a bit much for me to take on right now. My other pages are more unfinished and I’d like to focus on just getting some color down on those before I bolden up this page. I want this project to be relaxing and enjoyable for me. I’m worried that if I use the markers or make things too bold, I will feel like I made a mistake that I can’t undo.
+
+User: That sounds good. Here’s the first two pages so far.
+
+User: Can you apply some better shading to this image?
+
+User: Can you please convert this thread into a prompts.txt file?
+
+User: Can you just take my exact prompts and save them to a prompts.txt file instead please?
