@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 
+
 def init_db():
     with sqlite3.connect("sweeps_tracker.db") as conn:
         cursor = conn.cursor()
@@ -17,6 +18,8 @@ def init_db():
                 end_date DATE,
                 rules_url TEXT,
                 status TEXT DEFAULT 'pending', -- 'active', 'disregarded', 'pending'
+                LoadDate DATE,
+                UpdateDate DATE,
                 
                 -- Ensure uniqueness by URL and Start Date
                 UNIQUE(entry_url, start_date)
@@ -46,6 +49,30 @@ def init_db():
                 FOREIGN KEY (giveaway_id) REFERENCES giveaways (id)
             )
         ''')
+
+        # 4. Users Table 
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT,
+            last_name TEXT,
+            email TEXT,
+            state_code TEXT,      -- e.g., 'MI'
+            birth_date DATE,
+            zip_code TEXT,        
+            phone_number TEXT,    
+            address TEXT,
+            city TEXT,
+            country TEXT,
+            is_active BOOLEAN DEFAULT 1
+        )
+        ''')
+        # # Insert your profile 
+        # cursor.execute('''
+        #     INSERT OR IGNORE INTO users (first_name, last_name, email, state_code, birth_date, zip_code, phone_number, address, city, country)
+        #     VALUES ('FirstName', 'LastName', 'email@address.com', 'ST', 'YYYY-MM-DD', '12345', '555-123-4567', '123 Main St', 'Anytown', 'USA')
+        # ''')
+        # # 
         
         conn.commit()
 

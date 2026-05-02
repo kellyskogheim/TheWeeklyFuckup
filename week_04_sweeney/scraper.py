@@ -171,17 +171,21 @@ def save_giveaway(conn: sqlite3.Connection, item: SweepstakesItem, dry_run: bool
         print(f"  Dry run: would save {item.name} ({item.status}) ends {item.end_date}")
         return
 
+    today = datetime.now().date().isoformat()
     conn.execute(
         """
         INSERT INTO giveaways
-        (name, entry_url, frequency, eligibility, start_date, end_date, rules_url, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (name, entry_url, frequency, eligibility, start_date, end_date, rules_url, status, LoadDate, UpdateDate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(entry_url, start_date) DO UPDATE SET
+            name=excluded.name,
             frequency=excluded.frequency,
             eligibility=excluded.eligibility,
             end_date=excluded.end_date,
             rules_url=excluded.rules_url,
-            status=excluded.status
+            status=excluded.status,
+            UpdateDate=excluded.UpdateDate,
+            LoadDate=COALESCE(giveaways.LoadDate, excluded.LoadDate)
         """,
         (
             item.name,
@@ -192,6 +196,8 @@ def save_giveaway(conn: sqlite3.Connection, item: SweepstakesItem, dry_run: bool
             item.end_date,
             item.rules_url,
             item.status,
+            today,
+            today,
         ),
     )
     conn.commit()
