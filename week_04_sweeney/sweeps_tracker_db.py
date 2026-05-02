@@ -5,23 +5,25 @@ def init_db():
     with sqlite3.connect("sweeps_tracker.db") as conn:
         cursor = conn.cursor()
         
-        # 1. Master Sweepstakes Table
+        # 1. Giveaways Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS giveaways (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                url TEXT UNIQUE,
-                frequency TEXT DEFAULT 'once', -- 'daily', 'weekly', 'once'
-                prize_value REAL,
+                entry_url TEXT NOT NULL,
+                frequency TEXT,          -- e.g., 'Daily', 'Weekly', 'Once'
+                eligibility TEXT,        -- Summary of rules (e.g., 'US 18+')
                 start_date DATE,
                 end_date DATE,
-                announcement_date DATE,
-                status TEXT DEFAULT 'pending', -- 'pending', 'disregarded', 'active'
-                disregard_reason TEXT
+                rules_url TEXT,
+                status TEXT DEFAULT 'pending', -- 'active', 'disregarded', 'pending'
+                
+                -- Ensure uniqueness by URL and Start Date
+                UNIQUE(entry_url, start_date)
             )
         ''')
 
-        # 2. Entry Log (To track daily entries)
+        # 2. Entry Log (To track entries)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS entries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
