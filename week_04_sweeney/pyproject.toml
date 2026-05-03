@@ -8,4 +8,5 @@ dependencies = [
     "beautifulsoup4",
     "requests",
     "playwright",
+    "transformers>=5.7.0",
 ]

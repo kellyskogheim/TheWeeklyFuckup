@@ -151,10 +151,35 @@ def parse_status(text: str) -> str:
     return "active"
 
 
+def extract_entry_link(soup: BeautifulSoup, base_url: str) -> Optional[str]:
+    anchor_text_patterns = [
+        r"click here to enter",
+    ]
+
+    for anchor in soup.select("a[href]"):
+        text = anchor.get_text(" ", strip=True).lower()
+        if any(re.search(pattern, text, re.I) for pattern in anchor_text_patterns):
+            href = anchor["href"].strip()
+            if href:
+                return urljoin(base_url, href)
+
+    for button in soup.select("button, input[type=submit]"):
+        text = button.get_text(" ", strip=True).lower() or button.get("value", "").lower()
+        if any(re.search(pattern, text, re.I) for pattern in anchor_text_patterns):
+            parent = button.find_parent("a", href=True)
+            if parent:
+                href = parent["href"].strip()
+                if href:
+                    return urljoin(base_url, href)
+
+    return None
+
+
 def extract_detail_data(url: str, use_playwright: bool = False) -> dict:
     soup = get_soup(url, use_playwright=use_playwright)
     content_block = soup.select_one("div.content-detail") or soup.select_one("div.entry-content") or soup.select_one("section.content")
     page_text = clean_text(content_block.get_text(separator=" \n", strip=True) if content_block else soup.get_text(separator=" \n", strip=True))
+    entry_link = extract_entry_link(soup, url)
 
     return {
         "status": parse_status(page_text),
@@ -163,6 +188,7 @@ def extract_detail_data(url: str, use_playwright: bool = False) -> dict:
         "start_date": parse_date(parse_date_label("Start Date", page_text) or ""),
         "end_date": parse_date(parse_date_label("End Date", page_text) or ""),
         "rules_url": next((anchor["href"] for anchor in soup.select("a[href]") if "rules" in anchor.get_text(strip=True).lower()), None),
+        "entry_url": entry_link,
     }
 
 
@@ -234,6 +260,8 @@ def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
                 seen_urls.add(item.entry_url)
 
                 detail_data = extract_detail_data(item.entry_url, use_playwright=use_playwright)
+                if detail_data.get("entry_url"):
+                    item.entry_url = detail_data["entry_url"]
                 item.status = detail_data["status"]
                 item.eligibility = detail_data["eligibility"]
                 item.frequency = detail_data["frequency"]
