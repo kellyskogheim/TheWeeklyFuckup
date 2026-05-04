@@ -1,56 +1,70 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import time
 from datetime import datetime
 from typing import Dict, List
 
-from playwright.sync_api import sync_playwright
-
-from sweeps_tracker_db import get_active_user, get_eligible_giveaways, record_entry
+from helpers import get_active_user, get_eligible_giveaways, record_entry, update_giveaway_status
 
 
-def wait_for_form_submission(prompt: str) -> bool:
+def wait_for_form_submission(prompt: str) -> str:
     """
-    Wait for user input. Return False if ESC pressed (Windows), True if Enter pressed.
+    Wait for user input. Return 'record' for Enter, 'skip' for ESC, or 'disregard' for 'd'.
     """
     if sys.platform == 'win32':
         import msvcrt
-        print(f"{prompt} (Press Enter to continue or ESC to skip)")
+        print(f"{prompt} (Press Enter to record, ESC to skip, or 'd' to disregard)")
         while True:
             key = msvcrt.getch()
             if key == b'\r':  # Enter key
-                return True
+                return 'record'
             elif key == b'\x1b':  # ESC key
-                return False
+                return 'skip'
+            elif key.lower() == b'd':  # 'd' key
+                return 'disregard'
     else:
-        # Fallback for non-Windows: just use input()
-        response = input(prompt + " (Press Enter to continue or 'esc' then Enter to skip)\n").strip().lower()
-        return response != 'esc'
+        response = input(prompt + " (Press Enter to record, 'esc' to skip, or 'd' to disregard)\n").strip().lower()
+        if response == 'd':
+            return 'disregard'
+        return 'skip' if response == 'esc' else 'record'
 
 
-def autofill_form(page, user: Dict[str, str]) -> None:
-    # Common field selectors - adjust based on actual forms
-    field_mappings = {
-        'input[name="first_name"], input[name="firstname"], input[placeholder*="first name" i]': user.get('first_name', ''),
-        'input[name="last_name"], input[name="lastname"], input[placeholder*="last name" i]': user.get('last_name', ''),
-        'input[name="email"], input[type="email"], input[placeholder*="email" i]': user.get('email', ''),
-        'input[name="state"], select[name="state"], input[placeholder*="state" i]': user.get('state_code', ''),
-        'input[name="zip"], input[name="zipcode"], input[placeholder*="zip" i]': user.get('zip_code', ''),
-        'input[name="phone"], input[name="phone_number"], input[placeholder*="phone" i]': user.get('phone_number', ''),
-        'input[name="address"], input[placeholder*="address" i]': user.get('address', ''),
-        'input[name="city"], input[placeholder*="city" i]': user.get('city', ''),
-        'input[name="country"], select[name="country"], input[placeholder*="country" i]': user.get('country', ''),
-    }
-    
-    for selector, value in field_mappings.items():
-        if value:
-            try:
-                elements = page.query_selector_all(selector)
-                for element in elements:
-                    element.fill(value)
-            except Exception as e:
-                print(f"Could not fill {selector}: {e}")
+def open_url_in_chrome(url: str) -> None:
+    """Open the URL in Google Chrome if available, otherwise in the system default browser."""
+    if sys.platform == 'win32':
+        chrome_paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ]
+        for chrome_path in chrome_paths:
+            if os.path.exists(chrome_path):
+                subprocess.Popen([chrome_path, "--new-window", url], close_fds=True)
+                return
+
+        try:
+            subprocess.Popen(["chrome", "--new-window", url], close_fds=True)
+            return
+        except OSError:
+            pass
+
+        subprocess.Popen(["cmd", "/c", "start", "", url], shell=True)
+        return
+
+    if sys.platform == 'darwin':
+        subprocess.Popen(["open", "-a", "Google Chrome", url], close_fds=True)
+        return
+
+    try:
+        subprocess.Popen(["google-chrome", "--new-window", url], close_fds=True)
+    except OSError:
+        try:
+            subprocess.Popen(["chrome", "--new-window", url], close_fds=True)
+        except OSError:
+            import webbrowser
+            webbrowser.open_new(url)
 
 
 def run_entry_manager() -> None:
@@ -66,35 +80,28 @@ def run_entry_manager() -> None:
     
     print(f"Found {len(giveaways)} eligible giveaways for user {user['first_name']} {user['last_name']}.")
     print(f"Will process {len(giveaways)} entries.\n")
-    
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)  # Visible browser
-        context = browser.new_context()
-        
-        for idx, giveaway in enumerate(giveaways, 1):
-            print(f"\n[{idx}/{len(giveaways)}] Processing: {giveaway['name']}")
-            page = context.new_page()
-            page.goto(giveaway['entry_url'], wait_until="domcontentloaded", timeout=60000)
-            
-            # Autofill the form
-            autofill_form(page, user)
-            
-            # Wait for human interaction (Enter to continue, ESC to skip)
-            prompt = f"Complete the form for {giveaway['name']} and"
-            should_record = wait_for_form_submission(prompt)
-            
-            if should_record:
-                # Record the entry
-                record_entry(giveaway['id'], datetime.now())
-                print(f"✓ Recorded entry for {giveaway['name']}")
-            else:
-                print(f"⊘ Skipped entry for {giveaway['name']}")
-            
-            page.close()
-            time.sleep(2)  # Brief pause between entries
-        
-        browser.close()
-        print("\nAll entries processed.")
+
+    for idx, giveaway in enumerate(giveaways, 1):
+        print(f"\n[{idx}/{len(giveaways)}] Opening: {giveaway['name']}")
+        print(f"URL: {giveaway['entry_url']}")
+        print(f"Frequency: {giveaway['frequency']}")
+        print(f"Eligibility: {giveaway['eligibility']}")
+        open_url_in_chrome(giveaway['entry_url'])
+
+        prompt = f"Complete the form for {giveaway['name']} and"
+        action = wait_for_form_submission(prompt)
+
+        if action == 'record':
+            record_entry(giveaway['id'], datetime.now())
+            print(f"✓ Recorded entry for {giveaway['name']}")
+        elif action == 'disregard':
+            update_giveaway_status(giveaway['id'], 'disregarded')
+            print(f"🚫 Marked as disregarded: {giveaway['name']}")
+        else:  # skip
+            print(f"⊘ Skipped entry for {giveaway['name']}")
+        time.sleep(2)
+
+    print("\nAll entries processed.")
 
 
 if __name__ == "__main__":
