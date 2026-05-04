@@ -31,16 +31,6 @@ HEADERS = {
 }
 REQUEST_DELAY_SECONDS = 1.0
 
-INACTIVE_PATTERNS = [
-    r"\bclosed\b",
-    r"\bexpired\b",
-    r"\bno longer available\b",
-    r"\bwinners? have been selected\b",
-    r"\bwinner(s)? selected\b",
-    r"\bdrawing complete\b",
-    r"\bdrawing has occurred\b",
-]
-
 CATEGORY_URL_PATTERN = re.compile(r"/[A-Za-z0-9-]+-sweepstakes/?$", re.I)
 
 
@@ -143,14 +133,6 @@ def parse_frequency(text: str) -> Optional[str]:
     return match.group(1).strip() if match else None
 
 
-def parse_status(text: str) -> str:
-    lower_text = text.lower()
-    for pattern in INACTIVE_PATTERNS:
-        if re.search(pattern, lower_text):
-            return "inactive"
-    return "active"
-
-
 def extract_entry_link(soup: BeautifulSoup, base_url: str) -> Optional[str]:
     anchor_text_patterns = [
         r"click here to enter",
@@ -182,7 +164,6 @@ def extract_detail_data(url: str, use_playwright: bool = False) -> dict:
     entry_link = extract_entry_link(soup, url)
 
     return {
-        "status": parse_status(page_text),
         "eligibility": parse_eligibility(page_text),
         "frequency": parse_frequency(page_text),
         "start_date": parse_date(parse_date_label("Start Date", page_text) or ""),
@@ -209,7 +190,7 @@ def save_giveaway(conn: sqlite3.Connection, item: SweepstakesItem, dry_run: bool
             eligibility=excluded.eligibility,
             end_date=excluded.end_date,
             rules_url=excluded.rules_url,
-            status=excluded.status,
+            status=CASE WHEN giveaways.status = 'disregarded' THEN giveaways.status ELSE excluded.status END,
             UpdateDate=excluded.UpdateDate,
             LoadDate=COALESCE(giveaways.LoadDate, excluded.LoadDate)
         """,
@@ -240,6 +221,23 @@ def has_entry_history(conn: sqlite3.Connection, entry_url: str, start_date: Opti
     return cursor.fetchone() is not None
 
 
+def update_expired_giveaways(conn: sqlite3.Connection) -> None:
+    """Update the status of giveaways that have expired based on end_date."""
+    today = datetime.now().date()
+    conn.execute(
+        """
+        UPDATE giveaways
+        SET status = 'inactive', UpdateDate = ?
+        WHERE status = 'active' AND end_date < ?
+        """,
+        (today.isoformat(), today.isoformat()),
+    )
+    conn.commit()
+    updated_count = conn.total_changes
+    if updated_count > 0:
+        print(f"Updated {updated_count} expired giveaways to 'inactive' status.")
+
+
 def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
     init_db()
     today = datetime.now().date()
@@ -247,6 +245,9 @@ def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
     category_urls = extract_category_urls(categories_soup)
 
     with sqlite3.connect("sweeps_tracker.db") as conn:
+        # Update expired giveaways first
+        if not dry_run:
+            update_expired_giveaways(conn)
         seen_urls: set[str] = set()
         for category_url in category_urls:
             category_name = category_url.rstrip("/").split("/")[-1].replace("-sweepstakes", "").replace("-", " ").title()
@@ -262,15 +263,12 @@ def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
                 detail_data = extract_detail_data(item.entry_url, use_playwright=use_playwright)
                 if detail_data.get("entry_url"):
                     item.entry_url = detail_data["entry_url"]
-                item.status = detail_data["status"]
                 item.eligibility = detail_data["eligibility"]
                 item.frequency = detail_data["frequency"]
                 item.start_date = detail_data["start_date"]
                 item.end_date = detail_data["end_date"]
                 item.rules_url = detail_data["rules_url"]
-
-                if item.end_date and item.end_date < today:
-                    item.status = "inactive"
+                item.status = "inactive" if item.end_date and item.end_date < today else "active"
 
                 if has_entry_history(conn, item.entry_url, item.start_date):
                     print(f"  Skipping because entry history exists: {item.name}")
