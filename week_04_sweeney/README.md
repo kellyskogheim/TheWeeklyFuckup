@@ -30,9 +30,9 @@ uv run entry_manager.py
 ## Enhancements
 
 - playwright dependency is likely not needed and can be removed from scraper
-- Users table is not effectively used, eligibility filtering could move to user input and an LLM
+- users table is not effectively used, eligibility filtering could use an LLM
 - tracking winnings is not in here yet.. I haven't won anything.. should monitor sweepstakes email and add
-- audit whether this is actually pulling all sweepstakes.. I'm not convinced that it is
+- switch to the homepage for scraping and add pagination logic.. I think this may only be pulling the first page of each category.. 
 - add doc strings
 - a million more things that I will likely not do..
 
