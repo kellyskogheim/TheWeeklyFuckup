@@ -12,12 +12,6 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-try:
-    from playwright.sync_api import sync_playwright
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-
 from sweeps_tracker_db import init_db
 
 
@@ -46,24 +40,11 @@ class SweepstakesItem:
     status: str = "pending"
 
 
-def get_soup(url: str, use_playwright: bool = False) -> BeautifulSoup:
-    if use_playwright and PLAYWRIGHT_AVAILABLE:
-        return _get_soup_via_playwright(url)
-
+def get_soup(url: str) -> BeautifulSoup:
     response = requests.get(url, headers=HEADERS, timeout=30)
     response.raise_for_status()
     return BeautifulSoup(response.text, "html.parser")
 
-
-def _get_soup_via_playwright(url: str) -> BeautifulSoup:
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(user_agent=HEADERS["User-Agent"], java_script_enabled=True)
-        page = context.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        html = page.content()
-        browser.close()
-    return BeautifulSoup(html, "html.parser")
 
 
 def is_category_url(href: str, text: str) -> bool:
@@ -157,8 +138,8 @@ def extract_entry_link(soup: BeautifulSoup, base_url: str) -> Optional[str]:
     return None
 
 
-def extract_detail_data(url: str, use_playwright: bool = False) -> dict:
-    soup = get_soup(url, use_playwright=use_playwright)
+def extract_detail_data(url: str) -> dict:
+    soup = get_soup(url)
     content_block = soup.select_one("div.content-detail") or soup.select_one("div.entry-content") or soup.select_one("section.content")
     page_text = clean_text(content_block.get_text(separator=" \n", strip=True) if content_block else soup.get_text(separator=" \n", strip=True))
     entry_link = extract_entry_link(soup, url)
@@ -238,10 +219,10 @@ def update_expired_giveaways(conn: sqlite3.Connection) -> None:
         print(f"Updated {updated_count} expired giveaways to 'inactive' status.")
 
 
-def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
+def run_scraper(dry_run: bool = False) -> None:
     init_db()
     today = datetime.now().date()
-    categories_soup = get_soup(CATEGORIES_URL, use_playwright=use_playwright)
+    categories_soup = get_soup(CATEGORIES_URL,)
     category_urls = extract_category_urls(categories_soup)
 
     with sqlite3.connect("sweeps_tracker.db") as conn:
@@ -252,7 +233,7 @@ def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
         for category_url in category_urls:
             category_name = category_url.rstrip("/").split("/")[-1].replace("-sweepstakes", "").replace("-", " ").title()
             print(f"Processing category: {category_name} -> {category_url}")
-            page_soup = get_soup(category_url, use_playwright=use_playwright)
+            page_soup = get_soup(category_url)
             items = extract_sweepstakes_from_category(page_soup, category_name)
 
             for item in items:
@@ -260,7 +241,7 @@ def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
                     continue
                 seen_urls.add(item.entry_url)
 
-                detail_data = extract_detail_data(item.entry_url, use_playwright=use_playwright)
+                detail_data = extract_detail_data(item.entry_url)
                 if detail_data.get("entry_url"):
                     item.entry_url = detail_data["entry_url"]
                 item.eligibility = detail_data["eligibility"]
@@ -285,19 +266,12 @@ def run_scraper(use_playwright: bool = False, dry_run: bool = False) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape Sweepstakes Fanatics sweepstakes and populate giveaways.")
     parser.add_argument(
-        "--use-playwright",
-        action="store_true",
-        help="Use Playwright to fetch pages when requests alone is blocked.",
-    )
-    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Run the scraper without writing updates to the database.",
     )
     args = parser.parse_args()
-    if args.use_playwright and not PLAYWRIGHT_AVAILABLE:
-        raise RuntimeError("Playwright is not installed. Install it or omit --use-playwright.")
-    run_scraper(use_playwright=args.use_playwright, dry_run=args.dry_run)
+    run_scraper(dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
