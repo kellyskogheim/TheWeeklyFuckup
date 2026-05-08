@@ -42,15 +42,19 @@ def check_for_wins():
             subject = next(header['value'] for header in txt['payload']['headers'] if header['name'] == 'Subject')
             
             # Logic: Look for a giveaway name that is mentioned in the subject line
-            # This is a fuzzy match; adjust based on common email formats you see
+            # This uses Python substring search instead of SQLite LIKE matching.
             cursor.execute("""
-                SELECT g.id, g.name 
+                SELECT DISTINCT g.id, g.name
                 FROM giveaways g
                 JOIN entries e ON g.id = e.giveaway_id
-                WHERE ? LIKE '%' || g.name || '%'
-            """, (subject,))
+            """)
+            match = None
+            lower_subject = subject.lower()
+            for g_id, g_name in cursor.fetchall():
+                if g_name and g_name.lower() in lower_subject:
+                    match = (g_id, g_name)
+                    break
             
-            match = cursor.fetchone()
             if match:
                 g_id, g_name = match
                 print(f"🌟 MATCH FOUND: '{subject}' matches entry for '{g_name}'!")
@@ -58,10 +62,6 @@ def check_for_wins():
                 # Check if we already logged this win to avoid duplicates
                 cursor.execute("SELECT id FROM winnings WHERE giveaway_id = ? AND prize_description = ?", (g_id, subject))
                 if not cursor.fetchone():
-                    # cursor.execute("""
-                    #     INSERT INTO winnings (giveaway_id, prize_description, date_won, status)
-                    #     VALUES (?, ?, DATE('now'), 'pending')
-                    # """, (g_id, subject))
                     # Instead of assuming it's a win, log it for review
                     cursor.execute("""
                         INSERT INTO winnings (giveaway_id, prize_description, date_won, status)

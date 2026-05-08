@@ -85,6 +85,21 @@ def extract_sweepstakes_from_category(soup: BeautifulSoup, category_name: str) -
     return results
 
 
+def extract_total_pages(soup: BeautifulSoup) -> int:
+    page_text = soup.get_text(" ", strip=True)
+    match = re.search(r"Page\s*\d+\s*of\s*(\d+)", page_text, re.I)
+    if match:
+        return int(match.group(1))
+
+    page_numbers: List[int] = []
+    for anchor in soup.select("a[href]"):
+        href = anchor["href"].strip()
+        page_match = re.search(r"/page/(\d+)/?$", href)
+        if page_match:
+            page_numbers.append(int(page_match.group(1)))
+    return max(page_numbers) if page_numbers else 1
+
+
 def clean_text(text: str) -> str:
     text = re.sub(r"[ \t\f\v]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
@@ -222,19 +237,20 @@ def update_expired_giveaways(conn: sqlite3.Connection) -> None:
 def run_scraper(dry_run: bool = False) -> None:
     init_db()
     today = datetime.now().date()
-    categories_soup = get_soup(CATEGORIES_URL,)
-    category_urls = extract_category_urls(categories_soup)
+    first_page_soup = get_soup(BASE_URL)
+    total_pages = extract_total_pages(first_page_soup)
 
     with sqlite3.connect("sweeps_tracker.db") as conn:
         # Update expired giveaways first
         if not dry_run:
             update_expired_giveaways(conn)
         seen_urls: set[str] = set()
-        for category_url in category_urls:
-            category_name = category_url.rstrip("/").split("/")[-1].replace("-sweepstakes", "").replace("-", " ").title()
-            print(f"Processing category: {category_name} -> {category_url}")
-            page_soup = get_soup(category_url)
-            items = extract_sweepstakes_from_category(page_soup, category_name)
+
+        for page_number in range(1, total_pages + 1):
+            page_url = BASE_URL if page_number == 1 else f"{BASE_URL}/page/{page_number}/"
+            print(f"Processing page {page_number} of {total_pages}: {page_url}")
+            page_soup = first_page_soup if page_number == 1 else get_soup(page_url)
+            items = extract_sweepstakes_from_category(page_soup, "homepage")
 
             for item in items:
                 if item.entry_url in seen_urls:
