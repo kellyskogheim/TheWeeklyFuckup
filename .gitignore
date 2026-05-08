@@ -7,3 +7,5 @@ week_02_running_loop/*.gpx
 week_02_running_loop/*.html
 week_04_sweeney/*.db
 week_04_sweeney/*.mp4
+week_04_sweeney/credentials.json
+week_04_sweeney/token.json
