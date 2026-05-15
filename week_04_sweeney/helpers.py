@@ -123,10 +123,10 @@ def get_eligible_giveaways() -> List[Dict[str, str]]:
             if freq in ['Daily Entry', 'Weekly Entry', 'Monthly Entry', 'Unlimited Entry']:
                 # Check if already entered based on rules
                 if freq in ['Daily Entry', 'Unlimited Entry']:
-                    # Exclude if entered today
+                    # Exclude if entered within last 24 hours
                     cursor = conn.execute("""
                         SELECT 1 FROM entries 
-                        WHERE giveaway_id = ? AND DATE(entry_date) = DATE('now')
+                        WHERE giveaway_id = ? AND entry_date >= datetime('now', '-1 day')
                         LIMIT 1
                     """, (g_dict['id'],))
                     if cursor.fetchone():

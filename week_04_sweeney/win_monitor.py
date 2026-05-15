@@ -26,7 +26,7 @@ def get_gmail_service():
 def check_for_wins():
     service = get_gmail_service()
     # Search for emails from the last 7 days with "Congratulations" or "Winner"
-    query = 'newer_than:7d (subject:Congratulations OR subject:Winner OR subject:Won)'
+    query = 'newer_than:7d (subject:Congratulations OR subject:Congrats OR subject:Winner OR subject:Won)'
     results = service.users().messages().list(userId='me', q=query).execute()
     messages = results.get('messages', [])
 
