@@ -9,3 +9,8 @@ week_04_sweeney/*.db
 week_04_sweeney/*.mp4
 week_04_sweeney/credentials.json
 week_04_sweeney/token.json
+week_06_madame_garderobe/credentials.json
+week_06_madame_garderobe/token.json
+week_06_madame_garderobe/garderobe/
+week_06_madame_garderobe/garderobe.db
+week_06_madame_garderobe/.env
