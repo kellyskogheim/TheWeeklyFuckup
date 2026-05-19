@@ -5,6 +5,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
+from google.auth.exceptions import RefreshError
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -13,29 +14,38 @@ def get_gmail_service():
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                # If the token was revoked or expired in Testing mode,
+                # clear it out and force a fresh browser login flow
+                print("Token expired or revoked by Google. Re-authenticating...")
+                os.remove('token.json')
+                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                creds = flow.run_local_server(port=0)
         else:
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
+            
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
+            
     return build('gmail', 'v1', credentials=creds)
 
 def scrape_wardrobe_images():
     service = get_gmail_service()
     
-    # Calculate "yesterday" in Gmail search format (YYYY/MM/DD)
-    yesterday = (datetime.now() - timedelta(1)).strftime('%Y/%m/%d')
-    today = datetime.now().strftime('%Y/%m/%d')
-    query = f'after:{yesterday} before:{today} has:attachment'
+    # Grabs anything with an attachment from the last 36 hours.
+    query = 'newer_than:36h has:attachment'
     
     results = service.users().messages().list(userId='me', q=query).execute()
     messages = results.get('messages', [])
 
     if not messages:
-        print("No messages found from yesterday with attachments.")
+        print("No messages found from last 36 hours with attachments.")
         return
 
     if not os.path.exists('garderobe'):
