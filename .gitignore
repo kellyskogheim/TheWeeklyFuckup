@@ -1,6 +1,7 @@
 .venv/
 cache/
 __pycache__/
+**/*.mp4
 week_02_running_loop/*.txt
 week_02_running_loop/*.log
 week_02_running_loop/*.gpx

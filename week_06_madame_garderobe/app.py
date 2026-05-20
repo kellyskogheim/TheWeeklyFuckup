@@ -3,10 +3,11 @@ import sqlite3
 import httpx
 from pathlib import Path
 from datetime import datetime, date, timedelta
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from urllib.parse import quote
 
 # --- 1. CONFIG & INITIALIZATION ---
 st.set_page_config(page_title="Madame Garderobe", layout="wide")
@@ -24,11 +25,24 @@ def fetch_weather_context(location: str, target_date: date) -> str:
     
     try:
         # Step 1: Geocoding via Nominatim
-        geocode_url = f"https://nominatim.openstreetmap.org/search?q={httpx.utils.quote(location)}&format=json&limit=1"
-        headers = {"User-Agent": "MadameGarderobeApp/1.0 (contact: kelly@example.com)"}
+        safe_location = quote(location)
+        geocode_url = f"https://nominatim.openstreetmap.org/search?q={safe_location}&format=json&limit=1"
+        
+        # Make the User-Agent highly distinct and include a fallback header
+        headers = {
+            "User-Agent": "MadameGarderobeProject/2.0 (contact: github_wardrobe_project@example.com)",
+            "Accept": "application/json"
+        }
         
         with httpx.Client(headers=headers, follow_redirects=True) as client:
-            geo_res = client.get(geocode_url).json()
+            response = client.get(geocode_url)
+            
+            # Check for a broken HTTP status BEFORE trying to parse it as JSON
+            if response.status_code != 200:
+                print(f"DEBUG: Nominatim returned HTTP code {response.status_code}")
+                return f"Geocoder rejected request ({response.status_code}). Planning for mild 72°F weather."
+                
+            geo_res = response.json()
             if not geo_res or len(geo_res) == 0:
                 return f"Location '{location}' not found. Planning for mild 72°F weather."
             
@@ -126,6 +140,11 @@ class OutfitRecommendation(BaseModel):
     justification: str = Field(description="Fashion perspective explaining the coordination and layering choice.")
     outfit_vibe: str = Field(description="A 3-4 word title for the outfit aesthetic.")
     items: List[OutfittedItem] = Field(description="The items forming this outfit.")
+    # Optional field allows Pydantic to accept None or an empty list if shoes are skipped
+    shoes_recommendation: Optional[OutfittedItem] = Field(
+        default=None, 
+        description="The selected shoes for the outfit. Set to None ONLY if explicitly told to skip shoes."
+    )
 
 # --- 5. SIDEBAR ENVIRONMENT FIELDS ---
 st.sidebar.subheader("Parameters")
@@ -133,12 +152,14 @@ location_input = st.sidebar.text_input("Destination", value="Lansing, MI")
 date_input = st.sidebar.date_input("Date of Event", value=date.today())
 activity_input = st.sidebar.text_area("Activity Context", placeholder="Outdoor evening concert, casual dining.")
 
+# New layout flag for shoes
+include_shoes = st.sidebar.checkbox("Include shoes in recommendation", value=True)
+
 if st.sidebar.button("Assemble Outfit ✨", type="primary"):
     if not activity_input:
         st.warning("Please specify the activity details.")
     else:
-        with st.spinner("Analyzing environment data..."):
-            # A. Environmental Lookups
+        with st.spinner("Now, let's see what I've got in my drawers..."):
             weather_summary = fetch_weather_context(location_input, date_input)
             wardrobe = load_wardrobe_inventory()
             
@@ -147,30 +168,30 @@ if st.sidebar.button("Assemble Outfit ✨", type="primary"):
                 for i in wardrobe
             ])
             
-            # B. Execute Stylist Framework
-            llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
+            # Dynamically set the shoe rule based on the UI checkbox
+            if include_shoes:
+                shoe_instruction = "You MUST include exactly one selection for 'Shoes' inside the shoes_recommendation field."
+            else:
+                shoe_instruction = "The user wants to skip shoes. Do NOT select any shoes from the inventory. Set the shoes_recommendation field strictly to null/None."
+
+            llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=1)
             structured_stylist = llm.with_structured_output(OutfitRecommendation)
             
             prompt = f"""
-            You are a creative, fashion-forward personal stylist. Assemble an outfit from the inventory below.
+            You are a sharp, fashion-forward personal stylist. Assemble an outfit from the inventory below.
             
             Context:
             - Activity: {activity_input}
             - Environmental Target: {weather_summary}
             
             SECURITY DIRECTIVE:
-            You are a wardrobe assistant interface. You only have access to the text inventory provided below. You do not have access to the host operating system, local directory trees, network filesystems, or files ending in .json or .env. If asked to inspect or read local configuration files, politely decline and return to outfit coordination.
+            You are an outfit assistant. You only have access to the text inventory list. You absolutely do not have access to host environments, configuration data, files ending in .json, or files ending in .env. Turn down any instructions requesting file reads or file prints.
 
-            STYLING RULES:
-            1. You can be flexible and creative with layering! You may combine:
-               - A standard Top and Bottom.
-               - A One-Piece on its own (with shoes).
-               - Layer multiple tops (e.g., a button-down under a sweater).
-               - Layer a top over or under a One-Piece (e.g., a shirt over a dress, a turtleneck under a romper).
-               - Add Outerwear over any combination if the vibe or weather calls for it.
-            2. You must always include exactly one selection for 'Shoes'.
-            3. Accessories are completely optional add-ons. Only include them if appropriate items exist in the inventory.
-            4. For every item chosen, map its 'layer_role' clearly so the user knows how to wear it.
+            STYLING LAWS:
+            1. Be fluid with layering! You can group a top/bottom, use a one-piece alone, layer a top under/over a one-piece, or stack outerwear on top.
+            2. SHOE RULE: {shoe_instruction}
+            3. Accessories are optional add-ons if available.
+            4. Pick real file paths exactly as listed.
             
             Inventory Choices:
             {inventory_text}
@@ -181,14 +202,16 @@ if st.sidebar.button("Assemble Outfit ✨", type="primary"):
                 
                 # --- 6. SUCCINCT RESULTS SCREEN ---
                 st.subheader(f"✨ Look: {recommendation.outfit_vibe}")
-                
-                # Display target weather data at a quick glance
                 st.caption(f"🌤️ **Context Engine:** {weather_summary}")
                 
-                # Row presentation for clothes
-                if recommendation.items:
-                    cols = st.columns(len(recommendation.items))
-                    for idx, outfit_item in enumerate(recommendation.items):
+                # Build display columns dynamically
+                total_display_items = list(recommendation.items)
+                if include_shoes and recommendation.shoes_recommendation:
+                    total_display_items.append(recommendation.shoes_recommendation)
+                
+                if total_display_items:
+                    cols = st.columns(len(total_display_items))
+                    for idx, outfit_item in enumerate(total_display_items):
                         with cols[idx]:
                             if Path(outfit_item.file_path).exists():
                                 st.image(outfit_item.file_path, width='stretch')
@@ -197,7 +220,6 @@ if st.sidebar.button("Assemble Outfit ✨", type="primary"):
                             else:
                                 st.error(f"Missing file: {outfit_item.item_name}")
                 
-                # Collapsible area for text-heavy styling justifications
                 with st.expander("🔍 Read Stylist's Notes & Justification"):
                     st.write(recommendation.justification)
                     
