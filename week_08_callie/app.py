@@ -1,463 +1,284 @@
-import base64
 import io
-import json
+import base64
+import streamlit as st
+import pytz
 import os
 import re
-import smtplib
-import threading
-import uuid
-from dataclasses import dataclass, field
-from datetime import date, datetime
-from email.message import EmailMessage
-from typing import Any, Optional
-
-import pytz
-import requests
-import streamlit as st
-from bs4 import BeautifulSoup
+import pandas as pd
 from icalendar import Calendar, Event
-from dotenv import load_dotenv
-from pydantic import BaseModel
-from pypdf import PdfReader
+from datetime import datetime, date, timedelta
+try:
+	from dateutil.parser import parse as parse_date
+except Exception:
+	def parse_date(s):
+		# best-effort fallback
+		try:
+			return datetime.fromisoformat(s)
+		except Exception:
+			try:
+				return datetime.strptime(s, "%Y-%m-%d")
+			except Exception:
+				return s
 
-load_dotenv()
+from pypdf import PdfReader
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
+
+
+st.set_page_config(page_title="Smart Calendar Converter", layout="wide")
 
 
 class EventRecord(BaseModel):
-    title: str
-    start: str
-    end: str
-    description: str = ""
-    location: Optional[str] = None
-
-
-@dataclass
-class BackgroundResult:
-    filename: str
-    ics_bytes: bytes
-    event_count: int
-    email_sent: bool
-    email_message: str
-    events: list[dict[str, Any]] = field(default_factory=list)
-
-
-TIMEZONE_OPTIONS = sorted(pytz.common_timezones)
-APP_JOBS: dict[str, object] = {}
-
-
-def parse_datetime(value: str, timezone_name: str) -> datetime | date:
-    cleaned = value.strip()
-    if cleaned.endswith("Z"):
-        cleaned = cleaned[:-1] + "+00:00"
-
-    if len(cleaned) == 10:
-        return datetime.strptime(cleaned, "%Y-%m-%d").date()
-
-    parsed = datetime.fromisoformat(cleaned)
-    target_tz = pytz.timezone(timezone_name)
-
-    if parsed.tzinfo is None:
-        localized = target_tz.localize(parsed, is_dst=None)
-        return localized
-
-    return parsed.astimezone(target_tz)
-
-
-def extract_pdf_text(pdf_bytes: bytes) -> str:
-    text_chunks: list[str] = []
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    for page in reader.pages:
-        page_text = page.extract_text() or ""
-        if page_text.strip():
-            text_chunks.append(page_text)
-    return "\n\n".join(text_chunks)
-
-
-def strip_code_fences(text: str) -> str:
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.IGNORECASE)
-    return cleaned.strip()
-
-
-def build_conversion_prompt(source_description: str, current_year: int) -> str:
-    return f"""You are a strict calendar extraction engine.
-Return ONLY raw JSON with no markdown fences, keys, or explanatory text.
-The output must be a JSON array where each object contains:
-- title (string)
-- start (ISO-8601 string)
-- end (ISO-8601 string)
-- description (string)
-- location (string or null)
-
-Rules:
-- Preserve the original event details.
-- If the source calendar omits a year, assume {current_year}.
-- Use values in the user timezone when possible.
-- For each event, append this exact disclaimer note to the description:
-  "Disclaimer: This event was generated from an uploaded image/PDF or URL and should be reviewed for accuracy."
-- The description field should include the original description text, plus the disclaimer note.
-- If there is no original description, still include the disclaimer note in the description.
-- If a location is not present, use null.
-- If start or end are all-day dates without a time, keep them as YYYY-MM-DD strings.
-- If the source contains times, use ISO-8601 values like 2026-07-14T09:00:00 or 2026-07-14T10:00:00.
-
-Source calendar content:
-{source_description}
-"""
-
-
-def call_llm(messages: list[dict[str, Any]], max_tokens: int = 2000) -> str:
-    api_base = os.getenv("OPENAI_API_BASE")
-    api_key = os.getenv("OPENAI_API_KEY")
-    model = os.getenv("OPENAI_MODEL")
-
-    if not api_base or not api_key or not model:
-        raise RuntimeError("Missing OPENAI_API_BASE, OPENAI_API_KEY, or OPENAI_MODEL in environment.")
-
-    response = requests.post(
-        f"{api_base.rstrip('/')}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": model,
-            "messages": messages,
-            "temperature": 0.0,
-            "max_tokens": max_tokens,
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return payload["choices"][0]["message"]["content"]
-
-
-def generate_ics(events: list[EventRecord], timezone_name: str, recipient_email: str) -> tuple[bytes, str]:
-    calendar = Calendar()
-    calendar.add("prodid", "-//AI Calendar Converter Prototype//EN")
-    calendar.add("version", "2.0")
-    calendar.add("x-wr-calname", f"Converted calendar for {recipient_email}")
-    calendar.add("x-wr-timezone", timezone_name)
-
-    for event in events:
-        ical_event = Event()
-        ical_event.add("summary", event.title)
-        ical_event.add("description", event.description)
-        if event.location:
-            ical_event.add("location", event.location)
-
-        start_dt = parse_datetime(event.start, timezone_name)
-        end_dt = parse_datetime(event.end, timezone_name)
-
-        ical_event.add("dtstart", start_dt)
-        ical_event.add("dtend", end_dt)
-        ical_event.add("dtstamp", datetime.now(pytz.utc))
-        calendar.add_component(ical_event)
-
-    ics_bytes = calendar.to_ical()
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    filename = f"converted_calendar_{timestamp}.ics"
-    return ics_bytes, filename
-
-
-def send_email_with_ics(recipient_email: str, ics_bytes: bytes, filename: str) -> tuple[bool, str]:
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_from = os.getenv("SMTP_FROM")
-
-    if not all([smtp_host, smtp_port, smtp_user, smtp_password, smtp_from]):
-        return False, "SMTP is not configured; the ICS file is available for local download."
-
-    message = EmailMessage()
-    message["Subject"] = "Your converted calendar (.ics)"
-    message["From"] = smtp_from
-    message["To"] = recipient_email
-    message.set_content(
-        "Your calendar conversion is ready. The attached .ics file includes the parsed events."
-    )
-    message.add_attachment(
-        ics_bytes,
-        maintype="text",
-        subtype="calendar",
-        filename=filename,
-    )
-
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=60) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.send_message(message)
-
-    return True, "Email sent successfully."
-
-
-def process_calendar_job(
-    email: str,
-    timezone_name: str,
-    source_type: str,
-    source_bytes: Optional[bytes],
-    url: Optional[str],
-    uploaded_file_name: Optional[str] = None,
-    uploaded_file_type: Optional[str] = None,
-) -> BackgroundResult:
-    current_year = datetime.now().year
-    source_description = ""
-
-    if source_type == "upload" and source_bytes:
-        file_name = (uploaded_file_name or "")
-        if file_name.lower().endswith(".pdf"):
-            source_description = extract_pdf_text(source_bytes)
-            if not source_description.strip():
-                raise RuntimeError("PDF text extraction returned no readable text. Try a clearer PDF or upload an image instead.")
-        else:
-            mime_type = uploaded_file_type or "application/octet-stream"
-            encoded = base64.b64encode(source_bytes).decode("utf-8")
-            image_data_url = f"data:{mime_type};base64,{encoded}"
-            messages = [
-                {
-                    "role": "system",
-                    "content": build_conversion_prompt("Uploaded image content", current_year),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Parse this calendar image into structured JSON events.",
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_data_url},
-                        },
-                    ],
-                },
-            ]
-            raw_response = call_llm(messages)
-            parsed = json.loads(strip_code_fences(raw_response))
-            validated = [EventRecord.model_validate(item) for item in parsed]
-            ics_bytes, filename = generate_ics(validated, timezone_name, email)
-            email_sent, email_message = send_email_with_ics(email, ics_bytes, filename)
-            return BackgroundResult(
-                filename=filename,
-                ics_bytes=ics_bytes,
-                event_count=len(validated),
-                email_sent=email_sent,
-                email_message=email_message,
-                events=[record.model_dump() for record in validated],
-            )
-
-    if source_type == "url" and url:
-        response = requests.get(url, timeout=60)
-        response.raise_for_status()
-        content_type = response.headers.get("content-type", "")
-        raw_bytes = response.content
-        if content_type.startswith("application/pdf"):
-            source_description = extract_pdf_text(raw_bytes)
-        elif content_type.startswith("image/"):
-            encoded = base64.b64encode(raw_bytes).decode("utf-8")
-            mime_type = content_type.split(";", 1)[0].strip()
-            image_data_url = f"data:{mime_type};base64,{encoded}"
-            messages = [
-                {
-                    "role": "system",
-                    "content": build_conversion_prompt("Uploaded image content", current_year),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Parse this calendar image from the URL into structured JSON events.",
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_data_url},
-                        },
-                    ],
-                },
-            ]
-            raw_response = call_llm(messages)
-            parsed = json.loads(strip_code_fences(raw_response))
-            validated = [EventRecord.model_validate(item) for item in parsed]
-            ics_bytes, filename = generate_ics(validated, timezone_name, email)
-            email_sent, email_message = send_email_with_ics(email, ics_bytes, filename)
-            return BackgroundResult(
-                filename=filename,
-                ics_bytes=ics_bytes,
-                event_count=len(validated),
-                email_sent=email_sent,
-                email_message=email_message,
-                events=[record.model_dump() for record in validated],
-            )
-        else:
-            soup = BeautifulSoup(response.text, "html.parser")
-            for tag in soup(["script", "style", "meta", "head", "nav"]):
-                tag.decompose()
-            cleaned_text = soup.get_text(separator=" ")
-            source_description = re.sub(r"\s+", " ", cleaned_text).strip()
-
-    if not source_description.strip():
-        raise RuntimeError("No readable calendar content was found. Upload an image/PDF or provide a URL to a readable calendar resource.")
-
-    prompt = build_conversion_prompt(source_description, current_year)
-    messages = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": f"Parse this calendar content into strict JSON events. The user timezone is {timezone_name}."},
-    ]
-    raw_response = call_llm(messages)
-    parsed = json.loads(strip_code_fences(raw_response))
-    validated = [EventRecord.model_validate(item) for item in parsed]
-
-    ics_bytes, filename = generate_ics(validated, timezone_name, email)
-    email_sent, email_message = send_email_with_ics(email, ics_bytes, filename)
-    return BackgroundResult(
-        filename=filename,
-        ics_bytes=ics_bytes,
-        event_count=len(validated),
-        email_sent=email_sent,
-        email_message=email_message,
-        events=[record.model_dump() for record in validated],
-    )
-
-
-def _run_background_job(
-    job_id: str,
-    email: str,
-    timezone_name: str,
-    uploaded_bytes: Optional[bytes],
-    source_url: str,
-    uploaded_file_name: Optional[str],
-    uploaded_file_type: Optional[str],
-) -> None:
-    try:
-        if uploaded_file_name is not None:
-            source_type = "upload"
-            source_bytes = uploaded_bytes
-        elif source_url.strip():
-            source_type = "url"
-            source_bytes = None
-        else:
-            raise RuntimeError("No calendar source provided.")
-
-        result = process_calendar_job(
-            email=email,
-            timezone_name=timezone_name,
-            source_type=source_type,
-            source_bytes=source_bytes,
-            url=source_url.strip() or None,
-            uploaded_file_name=uploaded_file_name,
-            uploaded_file_type=uploaded_file_type,
-        )
-        APP_JOBS[job_id] = result
-    except Exception as exc:
-        APP_JOBS[job_id] = {"status": "error", "error": str(exc)}
-
-
-st.set_page_config(page_title="AI Calendar Converter", page_icon="📅", layout="wide")
-
-# Initialize states safely
-if "processing" not in st.session_state:
-    st.session_state.processing = False
-if "current_job_id" not in st.session_state:
-    st.session_state.current_job_id = None
-
-st.title("AI Calendar Converter Prototype")
-
-if st.session_state.processing:
-    from streamlit_autorefresh import st_autorefresh
-
-    st_autorefresh(interval=2000, key=f"refresh_{st.session_state.get('current_job_id')}")
-
-st.markdown(
-    "Upload a calendar photo or PDF, or point to a URL, then convert the content into an `.ics` file and email the result."
-)
-
-with st.container(border=True):
-    email = st.text_input("Recipient email (optional)", placeholder="person@example.com")
-    st.caption("Leave the email blank to keep the generated `.ics` file available for local download.")
-    timezone_name = st.selectbox("Recipient timezone", TIMEZONE_OPTIONS, index=TIMEZONE_OPTIONS.index("UTC"))
-
-    with st.container(border=True):
-        source_url = st.text_input("Calendar URL", placeholder="https://example.com/calendar").strip()
-
-    st.markdown(
-        "<div style='text-align:center; font-weight:700; margin: 0.5rem 0;'>- OR -</div>",
-        unsafe_allow_html=True,
-    )
-
-    with st.container(border=True):
-        uploaded_file = st.file_uploader(
-            "Upload photo or PDF",
-            type=["png", "jpg", "jpeg", "pdf"],
-            accept_multiple_files=False,
-        )
-
-    if st.button("Convert calendar", type="primary", disabled=st.session_state.processing):
-        source_url = source_url.strip()
-
-        if source_url and not re.match(r"^https?://", source_url):
-            st.error("Please enter a valid URL including http:// or https://")
-            st.stop()
-
-        if uploaded_file is None and not source_url:
-            st.warning("Please upload a file or provide a URL.")
-            st.stop()
-
-        job_id = f"calendar_job_{uuid.uuid4().hex}"
-        st.session_state.current_job_id = job_id
-        st.session_state.processing = True
-        st.session_state.processing_started = True
-
-        APP_JOBS[job_id] = {"status": "processing"}
-
-        uploaded_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
-        uploaded_file_name = uploaded_file.name if uploaded_file is not None else None
-        uploaded_file_type = uploaded_file.type if uploaded_file is not None else None
-
-        thread = threading.Thread(
-            target=_run_background_job,
-            args=(
-                job_id,
-                email,
-                timezone_name,
-                uploaded_bytes,
-                source_url,
-                uploaded_file_name,
-                uploaded_file_type,
-            ),
-            daemon=True,
-        )
-        thread.start()
-
-job_id = st.session_state.get("current_job_id")
-current_job = APP_JOBS.get(job_id) if job_id else None
-
-if current_job is not None:
-    if isinstance(current_job, dict) and current_job.get("status") == "processing":
-        with st.spinner("Processing your calendar in the background..."):
-            st.info("Analyzing content... check your downloads shortly!")
-
-    elif isinstance(current_job, BackgroundResult):
-        result = current_job
-        st.session_state.processing = False
-        st.session_state.processing_started = False
-        st.session_state.current_job_id = None
-        st.success("Calendar conversion completed.")
-        st.write(f"Parsed {result.event_count} events.")
-        st.write(result.email_message)
-        st.download_button(
-            label="Download generated .ics file",
-            data=result.ics_bytes,
-            file_name=result.filename,
-            mime="text/calendar",
-        )
-        st.rerun()
-    elif isinstance(current_job, dict) and current_job.get("status") == "error":
-        st.session_state.processing = False
-        st.session_state.processing_started = False
-        st.session_state.current_job_id = None
-        st.error(current_job.get("error", "An unknown error occurred while processing the calendar."))
-        st.rerun()
+	title: str = Field(description="The name of the calendar event")
+	start: str = Field(description="The ISO 8601 string or YYYY-MM-DD representing the start date/time")
+	end: str = Field(description="The ISO 8601 string or YYYY-MM-DD representing the end date/time")
+	description: str = Field(default="", description="Additional details or notes about the event")
+	location: str = Field(default="", description="Where the event takes place, if specified")
+
+
+class CalendarExtraction(BaseModel):
+	events: list[EventRecord]
+
+
+def extract_pdf_text(uploaded_file) -> str:
+	"""Extract text from an uploaded PDF (Streamlit UploadedFile).
+
+	Returns the concatenated text of all pages.
+	"""
+	if uploaded_file is None:
+		return ""
+
+	pdf_bytes = uploaded_file.getvalue()
+	if not pdf_bytes:
+		return ""
+
+	reader = PdfReader(io.BytesIO(pdf_bytes))
+	parts = []
+	for page in reader.pages:
+		try:
+			text = page.extract_text() or ""
+		except Exception:
+			text = ""
+		parts.append(text)
+	return "\n\n".join(parts)
+
+
+def generate_ics(events: list[dict]) -> bytes:
+	cal = Calendar()
+	cal.add('prodid', '-//Smart Calendar Converter//')
+	cal.add('version', '2.0')
+
+	for ev in events:
+		e = Event()
+		title = ev.get('title') or ev.get('summary') or 'Event'
+		e.add('summary', title)
+		if ev.get('description'):
+			e.add('description', ev.get('description'))
+		if ev.get('location'):
+			e.add('location', ev.get('location'))
+
+		start_raw = ev.get('start')
+		end_raw = ev.get('end') or start_raw
+
+		# Determine if inputs are date-only (YYYY-MM-DD)
+		def is_date_only(s):
+			return isinstance(s, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', s)
+
+		start_dt = None
+		end_dt = None
+		is_all_day = False
+
+		if start_raw and is_date_only(start_raw):
+			# start provided as date only -> all-day
+			try:
+				start_dt = datetime.strptime(start_raw, "%Y-%m-%d").date()
+				is_all_day = True
+			except Exception:
+				start_dt = None
+		else:
+			try:
+				start_dt = parse_date(start_raw) if start_raw else None
+			except Exception:
+				start_dt = None
+
+		if end_raw and is_date_only(end_raw):
+			try:
+				end_dt = datetime.strptime(end_raw, "%Y-%m-%d").date()
+				is_all_day = True
+			except Exception:
+				end_dt = None
+		else:
+			try:
+				end_dt = parse_date(end_raw) if end_raw else None
+			except Exception:
+				end_dt = None
+
+		# If times indicate full-day (00:00 -> 23:59:59), treat as all-day
+		if not is_all_day and isinstance(start_dt, datetime) and isinstance(end_dt, datetime):
+			if start_dt.time() == datetime.min.time() and end_dt.time() == datetime.max.time().replace(microsecond=0):
+				is_all_day = True
+
+		if is_all_day:
+			# For all-day events, use date values and make dtend exclusive (end + 1 day)
+			if isinstance(start_dt, datetime):
+				start_date = start_dt.date()
+			else:
+				start_date = start_dt
+
+			if isinstance(end_dt, datetime):
+				end_date = end_dt.date()
+			else:
+				end_date = end_dt or start_date
+
+			if start_date:
+				e.add('dtstart', start_date)
+				# dtend for all-day should be the day after the last full day
+				try:
+					cal_end = (end_date + timedelta(days=1)) if end_date else (start_date + timedelta(days=1))
+					e.add('dtend', cal_end)
+				except Exception:
+					pass
+			else:
+				# fallback to no dates
+				pass
+		else:
+			# Timed events: use datetime objects directly
+			if isinstance(start_dt, (datetime, date)):
+				e.add('dtstart', start_dt)
+			if isinstance(end_dt, (datetime, date)) and end_dt != start_dt:
+				e.add('dtend', end_dt)
+		try:
+			start_dt = parse_date(start_raw) if start_raw else None
+		except Exception:
+			start_dt = None
+		try:
+			end_dt = parse_date(end_raw) if end_raw else None
+		except Exception:
+			end_dt = None
+
+		if isinstance(start_dt, (datetime, date)):
+			e.add('dtstart', start_dt)
+		if isinstance(end_dt, (datetime, date)) and end_dt != start_dt:
+			e.add('dtend', end_dt)
+
+		cal.add_component(e)
+
+	return cal.to_ical()
+
+
+def render():
+	if "extracted_json" not in st.session_state:
+		st.session_state.extracted_json = None
+
+	col1, col2 = st.columns([1, 1])
+
+	# Left column: controls
+	with col1:
+		st.title("📅 Smart Calendar Converter")
+
+		tz_default = "UTC"
+		try:
+			tz_index = list(pytz.common_timezones).index(tz_default)
+		except ValueError:
+			tz_index = 0
+
+		timezone = st.selectbox("Select timezone", pytz.common_timezones, index=tz_index)
+
+		uploaded_pdf = st.file_uploader("Upload calendar PDF", type=["pdf"], accept_multiple_files=False)
+
+		process_disabled = uploaded_pdf is None
+		clicked = st.button("Process Calendar", disabled=process_disabled)
+
+		# Handle processing on click
+		if clicked and uploaded_pdf is not None:
+			with st.spinner("Extracting calendar text and consulting the LLM via LangChain..."):
+				extracted_text = extract_pdf_text(uploaded_pdf)
+
+				# Initialize the LLM and bind structured output
+				llm = ChatGroq(
+					temperature=0,
+					model_name=os.getenv("OPENAI_MODEL"),
+					groq_api_key=os.getenv("OPENAI_API_KEY"),
+					max_tokens=4000,
+				)
+				structured_llm = llm.with_structured_output(CalendarExtraction)
+
+				# Build a simple prompt text
+				system_instructions = (
+					"You are a calendar extraction assistant. Parse the provided document text into a list of events. "
+					"Return only the structured JSON matching the CalendarExtraction model. "
+					"If an event omits a year, assume the year is the current year (2026)."
+				)
+
+				prompt_text = (
+					f"{system_instructions}\n\nDocument text:\n{extracted_text}\n\nTimezone: {timezone}"
+				)
+
+				# Invoke the structured LLM with a single string prompt (Chat models expect str/PromptValue/list)
+				try:
+					result = structured_llm.invoke(prompt_text)
+				except Exception as e:
+					st.error(f"LLM invocation failed: {e}")
+					result = None
+
+				# Store the structured Pydantic output in session state
+				if result is not None:
+					try:
+						st.session_state.extracted_json = result.model_dump()
+					except Exception:
+						# Fallback: if result is already a dict-like
+						st.session_state.extracted_json = getattr(result, "data", None) or result
+
+		# Success indicator, interactive editor, and ICS generation
+		if st.session_state.extracted_json:
+			st.success("Calendar context successfully extracted!")
+			# Prepare events list for editing
+			events = None
+			if isinstance(st.session_state.extracted_json, dict):
+				events = st.session_state.extracted_json.get('events') or []
+			elif isinstance(st.session_state.extracted_json, list):
+				events = st.session_state.extracted_json
+			else:
+				events = []
+
+			# Show editable table
+			try:
+				df = pd.DataFrame(events)
+			except Exception:
+				df = pd.DataFrame()
+
+			if not df.empty:
+				edited_df = st.data_editor(df, num_rows="dynamic")
+				# persist edits back to session state
+				if edited_df is not None:
+					st.session_state.extracted_json['events'] = edited_df.to_dict(orient='records')
+			else:
+				st.info("No events found in extracted data to edit.")
+
+			st.markdown("---")
+			if st.button("Generate .ics and Download"):
+				events_for_ics = st.session_state.extracted_json.get('events') if isinstance(st.session_state.extracted_json, dict) else st.session_state.extracted_json
+				ics_bytes = generate_ics(events_for_ics or [])
+				if ics_bytes:
+					st.download_button(label="Download .ics", data=ics_bytes, file_name="calendar.ics", mime="text/calendar", key="download_ics")
+
+	# Right column: preview
+	with col2:
+		st.header("📄 Document Preview")
+
+		if uploaded_pdf is not None:
+			pdf_bytes = uploaded_pdf.getvalue()
+			if pdf_bytes:
+				b64 = base64.b64encode(pdf_bytes).decode("ascii")
+				iframe_html = f"<iframe src=\"data:application/pdf;base64,{b64}\" width=\"100%\" height=\"700px\"></iframe>"
+				st.markdown(iframe_html, unsafe_allow_html=True)
+			else:
+				st.info("Uploaded file is empty or could not be read.")
+		else:
+			st.info("Upload a calendar PDF on the left to see a live document preview here.")
+
+
+if __name__ == "__main__":
+	render()
+

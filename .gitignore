@@ -3,6 +3,7 @@ cache/
 __pycache__/
 **/*.mp4
 **/*.env
+**/*.pdf
 week_02_running_loop/*.txt
 week_02_running_loop/*.log
 week_02_running_loop/*.gpx
