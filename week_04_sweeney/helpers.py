@@ -108,6 +108,7 @@ def get_eligible_giveaways() -> List[Dict[str, str]]:
             SELECT id, name, entry_url, frequency, eligibility, start_date, end_date
             FROM giveaways
             WHERE status = 'active'
+            ORDER BY CASE WHEN frequency = 'Single Entry' THEN 0 ELSE 1 END, name ASC
         """).fetchall()
         
         eligible = []
