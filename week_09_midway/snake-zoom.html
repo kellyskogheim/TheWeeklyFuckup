@@ -75,7 +75,7 @@
 
     .brand,
     .hud,
-    .control-strip {
+    .game-menu {
       border: 2px solid rgba(255, 255, 255, 0.82);
       border-radius: 8px;
       background: var(--paper);
@@ -124,15 +124,41 @@
       font-size: 1.15rem;
     }
 
-    .control-strip {
-      display: flex;
-      gap: 8px;
-      padding: 8px;
+    .game-menu {
+      position: relative;
+      display: grid;
+      place-items: center;
+      padding: 6px;
     }
 
-    .control-strip button {
-      min-width: 86px;
+    .menu-button {
+      width: 46px;
       min-height: 40px;
+      background: #eaf4ff;
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .menu-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      display: grid;
+      gap: 8px;
+      min-width: 132px;
+      padding: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.88);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 14px 34px var(--shadow);
+    }
+
+    .menu-panel[hidden] {
+      display: none;
+    }
+
+    .menu-panel button {
+      min-height: 42px;
       background: #eaf4ff;
     }
 
@@ -298,6 +324,42 @@
       display: none;
     }
 
+    .joystick {
+      position: fixed;
+      right: max(18px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 3;
+      width: 132px;
+      height: 132px;
+      border: 3px solid rgba(255, 255, 255, 0.84);
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.44);
+      box-shadow: 0 16px 40px rgba(23, 32, 51, 0.18);
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    .joystick::before {
+      content: "";
+      position: absolute;
+      inset: 24px;
+      border: 2px dashed rgba(23, 32, 51, 0.18);
+      border-radius: 50%;
+    }
+
+    .joystick-knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 54px;
+      height: 54px;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      background: var(--yellow);
+      box-shadow: inset 0 -6px 0 rgba(23, 32, 51, 0.14), 0 8px 18px rgba(23, 32, 51, 0.18);
+      transform: translate(-50%, -50%);
+    }
+
     .boss {
       position: fixed;
       inset: 0;
@@ -350,8 +412,8 @@
         grid-template-columns: repeat(3, 1fr);
       }
 
-      .control-strip button {
-        flex: 1;
+      .game-menu {
+        justify-self: end;
       }
 
       .chooser-head {
@@ -382,9 +444,12 @@
         <div><span>Leader</span><strong id="leaderSize">10</strong></div>
         <div><span>Status</span><strong id="statusText">Pick snake</strong></div>
       </section>
-      <nav class="control-strip" aria-label="Game controls">
-        <button type="button" id="pauseButton">Pause</button>
-        <button type="button" id="newButton">New</button>
+      <nav class="game-menu" aria-label="Game controls">
+        <button class="menu-button" type="button" id="menuButton" aria-label="Open menu" aria-expanded="false">•••</button>
+        <div class="menu-panel" id="menuPanel" hidden>
+          <button type="button" id="pauseButton">Pause</button>
+          <button type="button" id="newButton">New</button>
+        </div>
       </nav>
     </header>
   </div>
@@ -408,6 +473,10 @@
     <div class="notice" id="notice">Choose your snake to begin.</div>
   </div>
 
+  <div class="joystick" id="joystick" aria-label="Move snake with thumb pad">
+    <div class="joystick-knob" id="joystickKnob"></div>
+  </div>
+
   <section class="boss" id="bossOverlay" hidden>
     <div class="boss-card">
       <h2 id="bossTitle">Boss Battle</h2>
@@ -422,8 +491,12 @@
     const chooser = document.querySelector("#chooser");
     const snakeGrid = document.querySelector("#snakeGrid");
     const startGameButton = document.querySelector("#startGameButton");
+    const menuButton = document.querySelector("#menuButton");
+    const menuPanel = document.querySelector("#menuPanel");
     const pauseButton = document.querySelector("#pauseButton");
     const newButton = document.querySelector("#newButton");
+    const joystickPad = document.querySelector("#joystick");
+    const joystickKnob = document.querySelector("#joystickKnob");
     const notice = document.querySelector("#notice");
     const playerSizeEl = document.querySelector("#playerSize");
     const leaderSizeEl = document.querySelector("#leaderSize");
@@ -464,6 +537,7 @@
     const bossSize = 1000;
     const keys = new Set();
     const pointer = { active: false, id: null, x: 0, y: 0 };
+    const joystick = { active: false, id: null, x: 0, y: 0 };
 
     let snakes = [];
     let pellets = [];
@@ -510,6 +584,8 @@
     function startGame() {
       chooser.hidden = true;
       bossOverlay.hidden = true;
+      setMenuOpen(false);
+      resetJoystick();
       running = true;
       paused = false;
       bossMode = false;
@@ -674,6 +750,8 @@
 
       if (x || y) {
         player.turnGoal = Math.atan2(y, x);
+      } else if (joystick.active && (joystick.x || joystick.y)) {
+        player.turnGoal = Math.atan2(joystick.y, joystick.x);
       } else if (pointer.active) {
         const head = player.body[0];
         const world = screenToWorld(pointer.x, pointer.y);
@@ -1303,7 +1381,7 @@
     function steerWithPointer(event) {
       if (chooser && !chooser.hidden) return;
       if (!running || paused || bossMode) return;
-      if (event.target && event.target.closest && event.target.closest("button, .chooser, .control-strip, .boss")) return;
+      if (event.target && event.target.closest && event.target.closest("button, .chooser, .game-menu, .joystick, .boss")) return;
       if (event.cancelable) event.preventDefault();
       pointer.active = true;
       pointer.id = event.pointerId;
@@ -1371,10 +1449,68 @@
       pointer.id = null;
     });
 
+    function setMenuOpen(open) {
+      menuPanel.hidden = !open;
+      menuButton.setAttribute("aria-expanded", String(open));
+    }
+
+    menuButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setMenuOpen(menuPanel.hidden);
+    });
+
+    window.addEventListener("click", (event) => {
+      if (event.target && event.target.closest && event.target.closest(".game-menu")) return;
+      setMenuOpen(false);
+    });
+
+    function updateJoystick(event) {
+      if (!running || paused || bossMode || (chooser && !chooser.hidden)) return;
+      if (event.cancelable) event.preventDefault();
+      const rect = joystickPad.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const rawX = event.clientX - centerX;
+      const rawY = event.clientY - centerY;
+      const distance = Math.hypot(rawX, rawY);
+      const limit = rect.width * 0.32;
+      const scale = distance > limit ? limit / distance : 1;
+      joystick.active = true;
+      joystick.id = event.pointerId;
+      joystick.x = rawX * scale;
+      joystick.y = rawY * scale;
+      joystickKnob.style.transform = `translate(calc(-50% + ${joystick.x}px), calc(-50% + ${joystick.y}px))`;
+      if (joystickPad.setPointerCapture) {
+        try {
+          joystickPad.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture is best-effort across browsers.
+        }
+      }
+    }
+
+    function resetJoystick(event) {
+      if (event && joystick.id !== null && event.pointerId !== joystick.id) return;
+      joystick.active = false;
+      joystick.id = null;
+      joystick.x = 0;
+      joystick.y = 0;
+      joystickKnob.style.transform = "translate(-50%, -50%)";
+    }
+
+    joystickPad.addEventListener("pointerdown", updateJoystick);
+    joystickPad.addEventListener("pointermove", (event) => {
+      if (!joystick.active || event.pointerId !== joystick.id) return;
+      updateJoystick(event);
+    });
+    joystickPad.addEventListener("pointerup", resetJoystick);
+    joystickPad.addEventListener("pointercancel", resetJoystick);
+
     function togglePause() {
       if (!running || bossMode) return;
       paused = !paused;
       pauseButton.textContent = paused ? "Resume" : "Pause";
+      setMenuOpen(false);
       notice.hidden = !paused;
       if (paused) notice.textContent = "Paused";
       updateHud();
@@ -1384,6 +1520,8 @@
     newButton.addEventListener("click", () => {
       running = false;
       paused = true;
+      setMenuOpen(false);
+      resetJoystick();
       chooser.hidden = false;
       bossOverlay.hidden = true;
       notice.hidden = false;
