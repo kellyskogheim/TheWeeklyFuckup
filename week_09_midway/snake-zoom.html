@@ -249,6 +249,40 @@
       padding-right: 3px;
     }
 
+    .theme-picker {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .theme-card {
+      min-height: 58px;
+      padding: 9px 10px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      text-align: left;
+    }
+
+    .theme-card.is-selected {
+      border-color: var(--blue);
+      background: #eaf4ff;
+    }
+
+    .theme-card strong {
+      display: block;
+      font-size: 0.95rem;
+    }
+
+    .theme-card span {
+      display: block;
+      margin-top: 2px;
+      color: var(--soft-ink);
+      font-size: 1.25rem;
+      line-height: 1;
+    }
+
     .snake-card {
       display: grid;
       grid-template-columns: 104px 1fr;
@@ -447,6 +481,10 @@
         grid-template-columns: 1fr;
       }
 
+      .theme-picker {
+        grid-template-columns: 1fr;
+      }
+
       .start-row {
         justify-content: stretch;
       }
@@ -492,6 +530,7 @@
           <button type="button" id="startGameButton">Start Zooming</button>
         </div>
       </div>
+      <div class="theme-picker" id="themePicker" aria-label="Background choices"></div>
       <div class="snake-grid" id="snakeGrid" aria-label="Snake choices"></div>
     </div>
   </section>
@@ -516,6 +555,7 @@
     const canvas = document.querySelector("#game");
     const ctx = canvas.getContext("2d");
     const chooser = document.querySelector("#chooser");
+    const themePicker = document.querySelector("#themePicker");
     const snakeGrid = document.querySelector("#snakeGrid");
     const startGameButton = document.querySelector("#startGameButton");
     const menuButton = document.querySelector("#menuButton");
@@ -554,6 +594,33 @@
       { name: "Dragon Snake", piece: "💚", icon: "🐉", colors: ["#16a34a", "#65a30d"], stripe: "#bbf7d0" }
     ];
 
+    const backgroundThemes = [
+      {
+        id: "space",
+        name: "Space",
+        icon: "✨ 🌙",
+        fill: "#08152f",
+        grid: "rgba(190, 220, 255, 0.12)",
+        decoration: "stars"
+      },
+      {
+        id: "jungle",
+        name: "Jungle",
+        icon: "🌿 🍃",
+        fill: "#dff7d8",
+        grid: "rgba(18, 95, 53, 0.13)",
+        decoration: "leaves"
+      },
+      {
+        id: "sea",
+        name: "Under the Sea",
+        icon: "🫧 🪸",
+        fill: "#d8f7ff",
+        grid: "rgba(18, 91, 132, 0.13)",
+        decoration: "bubbles"
+      }
+    ];
+
     const worldSize = 5600;
     const initialLength = 10;
     const initialSize = 10;
@@ -574,6 +641,7 @@
     let pieces = [];
     let camera = { x: 0, y: 0 };
     let selectedTypeIndex = 0;
+    let selectedThemeIndex = 0;
     let player = null;
     let running = false;
     let paused = false;
@@ -592,6 +660,21 @@
     }
 
     function buildChooser() {
+      themePicker.innerHTML = "";
+      backgroundThemes.forEach((theme, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `theme-card${index === selectedThemeIndex ? " is-selected" : ""}`;
+        button.innerHTML = `<strong>${theme.name}</strong><span>${theme.icon}</span>`;
+        button.addEventListener("click", () => {
+          selectedThemeIndex = index;
+          [...themePicker.children].forEach((child) => child.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          draw();
+        });
+        themePicker.appendChild(button);
+      });
+
       snakeGrid.innerHTML = "";
       snakeTypes.forEach((type, index) => {
         const button = document.createElement("button");
@@ -1197,10 +1280,12 @@
     function drawWorld() {
       const width = window.innerWidth;
       const height = window.innerHeight;
+      const theme = backgroundThemes[selectedThemeIndex];
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "#f9fff4";
+      ctx.fillStyle = theme.fill;
       ctx.fillRect(0, 0, width, height);
-      ctx.strokeStyle = "rgba(23, 32, 51, 0.07)";
+      drawThemeDecorations(theme, width, height);
+      ctx.strokeStyle = theme.grid;
       ctx.lineWidth = 1;
       const spacing = 70;
       const startX = -mod(camera.x, spacing);
@@ -1216,6 +1301,54 @@
         ctx.moveTo(0, y);
         ctx.lineTo(width, y);
         ctx.stroke();
+      }
+    }
+
+    function drawThemeDecorations(theme, width, height) {
+      if (theme.decoration === "stars") {
+        ctx.fillStyle = "rgba(255, 246, 189, 0.82)";
+        for (let index = 0; index < 78; index += 1) {
+          const x = mod(index * 137 - camera.x * 0.18, width + 80) - 40;
+          const y = mod(index * 91 - camera.y * 0.18, height + 80) - 40;
+          const radius = index % 9 === 0 ? 2.6 : 1.4;
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = "rgba(122, 164, 255, 0.2)";
+        ctx.beginPath();
+        ctx.arc(width * 0.78, height * 0.22, 42, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+
+      if (theme.decoration === "leaves") {
+        for (let index = 0; index < 46; index += 1) {
+          const x = mod(index * 173 - camera.x * 0.12, width + 120) - 60;
+          const y = mod(index * 109 - camera.y * 0.12, height + 120) - 60;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate((index % 12) * 0.35);
+          ctx.fillStyle = index % 2 ? "rgba(25, 135, 84, 0.22)" : "rgba(101, 163, 13, 0.2)";
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 18, 7, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        return;
+      }
+
+      if (theme.decoration === "bubbles") {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.52)";
+        ctx.lineWidth = 2;
+        for (let index = 0; index < 54; index += 1) {
+          const x = mod(index * 151 - camera.x * 0.15, width + 90) - 45;
+          const y = mod(index * 83 - camera.y * 0.22, height + 90) - 45;
+          const radius = 5 + (index % 5) * 3;
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
     }
 
