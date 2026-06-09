@@ -26,8 +26,12 @@
       margin: 0;
       min-height: 100vh;
       overflow: hidden;
+      overscroll-behavior: none;
       color: var(--ink);
       font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
       background:
         radial-gradient(circle at 16% 16%, rgba(255, 214, 66, 0.36), transparent 25rem),
         radial-gradient(circle at 84% 20%, rgba(74, 168, 255, 0.26), transparent 24rem),
@@ -56,6 +60,7 @@
       inset: 0;
       display: grid;
       grid-template-rows: auto 1fr;
+      pointer-events: none;
     }
 
     .topbar {
@@ -136,6 +141,7 @@
       inset: 0;
       width: 100vw;
       height: 100vh;
+      touch-action: none;
       background: #f9fff4;
     }
 
@@ -197,8 +203,8 @@
 
     .snake-card {
       display: grid;
-      grid-template-columns: 64px 1fr;
-      gap: 12px;
+      grid-template-columns: 104px 1fr;
+      gap: 14px;
       align-items: center;
       min-height: 74px;
       padding: 10px;
@@ -213,22 +219,26 @@
       background: #eaf4ff;
     }
 
-    .snake-preview {
+    .snake-card .snake-preview {
       position: relative;
-      width: 64px;
-      height: 54px;
+      width: 104px;
+      height: 82px;
       display: grid;
       place-items: center;
-      font-size: 2.45rem;
+      margin: 0;
+      color: inherit;
+      font-size: 4.55rem;
+      line-height: 1;
+      font-weight: 400;
       background: transparent;
     }
 
-    .snake-preview::before {
+    .snake-card .snake-preview::before {
       content: "";
       position: absolute;
-      inset: auto 6px 2px auto;
-      width: 26px;
-      height: 26px;
+      inset: auto 10px 5px auto;
+      width: 34px;
+      height: 34px;
       border-radius: 50%;
       background: var(--preview-color, var(--yellow));
       box-shadow: inset 0 -4px 0 rgba(23, 32, 51, 0.14);
@@ -384,7 +394,7 @@
       <div class="chooser-head">
         <div>
           <h2>Pick Your Snake</h2>
-          <p>Move with arrow keys or WASD. Your snake turns toward the pointer on touch screens.</p>
+          <p>Move with arrow keys, WASD, touch, mouse, or trackpad. Your snake turns toward your pointer.</p>
         </div>
         <div class="start-row">
           <button type="button" id="startGameButton">Start Zooming</button>
@@ -453,7 +463,7 @@
     const baseSpacing = 12;
     const bossSize = 1000;
     const keys = new Set();
-    const pointer = { active: false, x: 0, y: 0 };
+    const pointer = { active: false, id: null, x: 0, y: 0 };
 
     let snakes = [];
     let pellets = [];
@@ -1290,13 +1300,75 @@
       }
     });
     window.addEventListener("keyup", (event) => keys.delete(event.key));
-    canvas.addEventListener("pointermove", (event) => {
+    function steerWithPointer(event) {
+      if (chooser && !chooser.hidden) return;
+      if (!running || paused || bossMode) return;
+      if (event.target && event.target.closest && event.target.closest("button, .chooser, .control-strip, .boss")) return;
+      if (event.cancelable) event.preventDefault();
       pointer.active = true;
+      pointer.id = event.pointerId;
       pointer.x = event.clientX;
       pointer.y = event.clientY;
+      if (canvas.setPointerCapture) {
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture is best-effort across browsers.
+        }
+      }
+    }
+
+    canvas.addEventListener("pointerdown", steerWithPointer);
+    canvas.addEventListener("pointermove", (event) => {
+      if (pointer.id !== null && event.pointerId !== pointer.id) return;
+      steerWithPointer(event);
     });
-    canvas.addEventListener("pointerleave", () => {
+    window.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      if (pointer.id !== null && event.pointerId !== pointer.id) return;
+      steerWithPointer(event);
+    });
+    window.addEventListener("pointerdown", steerWithPointer);
+    canvas.addEventListener("pointerup", (event) => {
+      if (pointer.id !== null && event.pointerId !== pointer.id) return;
       pointer.active = false;
+      pointer.id = null;
+      if (canvas.releasePointerCapture) {
+        try {
+          canvas.releasePointerCapture(event.pointerId);
+        } catch (error) {
+          // Some browsers release capture automatically.
+        }
+      }
+    });
+    window.addEventListener("pointerup", (event) => {
+      if (pointer.id !== null && event.pointerId !== pointer.id) return;
+      pointer.active = false;
+      pointer.id = null;
+    });
+    canvas.addEventListener("pointercancel", () => {
+      pointer.active = false;
+      pointer.id = null;
+    });
+    canvas.addEventListener("touchstart", (event) => {
+      if (!event.touches.length || (chooser && !chooser.hidden)) return;
+      event.preventDefault();
+      pointer.active = true;
+      pointer.id = "touch";
+      pointer.x = event.touches[0].clientX;
+      pointer.y = event.touches[0].clientY;
+    }, { passive: false });
+    canvas.addEventListener("touchmove", (event) => {
+      if (!event.touches.length || (chooser && !chooser.hidden)) return;
+      event.preventDefault();
+      pointer.active = true;
+      pointer.id = "touch";
+      pointer.x = event.touches[0].clientX;
+      pointer.y = event.touches[0].clientY;
+    }, { passive: false });
+    canvas.addEventListener("touchend", () => {
+      pointer.active = false;
+      pointer.id = null;
     });
 
     function togglePause() {
