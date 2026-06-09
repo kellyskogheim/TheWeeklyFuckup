@@ -111,6 +111,28 @@
       white-space: nowrap;
     }
 
+    body.is-playing .brand {
+      display: none;
+    }
+
+    body.is-playing .topbar {
+      grid-template-columns: auto auto;
+      justify-content: end;
+    }
+
+    body.is-playing .hud {
+      border-color: rgba(255, 255, 255, 0.44);
+      background: rgba(255, 255, 255, 0.28);
+      box-shadow: 0 10px 28px rgba(23, 32, 51, 0.1);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    body.is-playing .hud span,
+    body.is-playing .hud strong {
+      text-shadow: 0 1px 4px rgba(255, 255, 255, 0.85);
+    }
+
     .hud span {
       display: block;
       color: var(--soft-ink);
@@ -408,6 +430,11 @@
         align-items: stretch;
       }
 
+      body.is-playing .topbar {
+        grid-template-columns: 1fr auto;
+        align-items: start;
+      }
+
       .hud {
         grid-template-columns: repeat(3, 1fr);
       }
@@ -586,6 +613,7 @@
       bossOverlay.hidden = true;
       setMenuOpen(false);
       resetJoystick();
+      document.body.classList.add("is-playing");
       running = true;
       paused = false;
       bossMode = false;
@@ -1121,6 +1149,7 @@
       running = false;
       paused = true;
       bossMode = false;
+      document.body.classList.remove("is-playing");
       bossOverlay.hidden = false;
       bossTitle.textContent = title;
       bossText.textContent = text;
@@ -1133,6 +1162,7 @@
       paused = true;
       bossMode = false;
       bossState = null;
+      document.body.classList.remove("is-playing");
       bossOverlay.hidden = false;
       bossTitle.textContent = "Game Over";
       bossText.textContent = text;
@@ -1522,6 +1552,7 @@
       paused = true;
       setMenuOpen(false);
       resetJoystick();
+      document.body.classList.remove("is-playing");
       chooser.hidden = false;
       bossOverlay.hidden = true;
       notice.hidden = false;
@@ -1532,6 +1563,7 @@
     bossButton.addEventListener("click", () => {
       if (!running) {
         chooser.hidden = false;
+        document.body.classList.remove("is-playing");
         bossOverlay.hidden = true;
         return;
       }
