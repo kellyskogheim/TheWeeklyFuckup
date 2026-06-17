@@ -1,0 +1,8 @@
+credentials.json
+token.json
+*.secret.json
+.env
+.venv/
+__pycache__/
+*.py[cod]
+sweeps_tracker.db

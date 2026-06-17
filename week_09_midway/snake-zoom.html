@@ -75,7 +75,7 @@
 
     .brand,
     .hud,
-    .control-strip {
+    .game-menu {
       border: 2px solid rgba(255, 255, 255, 0.82);
       border-radius: 8px;
       background: var(--paper);
@@ -111,6 +111,28 @@
       white-space: nowrap;
     }
 
+    body.is-playing .brand {
+      display: none;
+    }
+
+    body.is-playing .topbar {
+      grid-template-columns: auto auto;
+      justify-content: end;
+    }
+
+    body.is-playing .hud {
+      border-color: rgba(255, 255, 255, 0.44);
+      background: rgba(255, 255, 255, 0.28);
+      box-shadow: 0 10px 28px rgba(23, 32, 51, 0.1);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    body.is-playing .hud span,
+    body.is-playing .hud strong {
+      text-shadow: 0 1px 4px rgba(255, 255, 255, 0.85);
+    }
+
     .hud span {
       display: block;
       color: var(--soft-ink);
@@ -124,15 +146,41 @@
       font-size: 1.15rem;
     }
 
-    .control-strip {
-      display: flex;
-      gap: 8px;
-      padding: 8px;
+    .game-menu {
+      position: relative;
+      display: grid;
+      place-items: center;
+      padding: 6px;
     }
 
-    .control-strip button {
-      min-width: 86px;
+    .menu-button {
+      width: 46px;
       min-height: 40px;
+      background: #eaf4ff;
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .menu-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      display: grid;
+      gap: 8px;
+      min-width: 132px;
+      padding: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.88);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 14px 34px var(--shadow);
+    }
+
+    .menu-panel[hidden] {
+      display: none;
+    }
+
+    .menu-panel button {
+      min-height: 42px;
       background: #eaf4ff;
     }
 
@@ -199,6 +247,40 @@
       gap: 10px;
       overflow: auto;
       padding-right: 3px;
+    }
+
+    .theme-picker {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .theme-card {
+      min-height: 58px;
+      padding: 9px 10px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      text-align: left;
+    }
+
+    .theme-card.is-selected {
+      border-color: var(--blue);
+      background: #eaf4ff;
+    }
+
+    .theme-card strong {
+      display: block;
+      font-size: 0.95rem;
+    }
+
+    .theme-card span {
+      display: block;
+      margin-top: 2px;
+      color: var(--soft-ink);
+      font-size: 1.25rem;
+      line-height: 1;
     }
 
     .snake-card {
@@ -298,6 +380,42 @@
       display: none;
     }
 
+    .joystick {
+      position: fixed;
+      right: max(18px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 3;
+      width: 132px;
+      height: 132px;
+      border: 3px solid rgba(255, 255, 255, 0.84);
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.44);
+      box-shadow: 0 16px 40px rgba(23, 32, 51, 0.18);
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    .joystick::before {
+      content: "";
+      position: absolute;
+      inset: 24px;
+      border: 2px dashed rgba(23, 32, 51, 0.18);
+      border-radius: 50%;
+    }
+
+    .joystick-knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 54px;
+      height: 54px;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      background: var(--yellow);
+      box-shadow: inset 0 -6px 0 rgba(23, 32, 51, 0.14), 0 8px 18px rgba(23, 32, 51, 0.18);
+      transform: translate(-50%, -50%);
+    }
+
     .boss {
       position: fixed;
       inset: 0;
@@ -346,15 +464,24 @@
         align-items: stretch;
       }
 
+      body.is-playing .topbar {
+        grid-template-columns: 1fr auto;
+        align-items: start;
+      }
+
       .hud {
         grid-template-columns: repeat(3, 1fr);
       }
 
-      .control-strip button {
-        flex: 1;
+      .game-menu {
+        justify-self: end;
       }
 
       .chooser-head {
+        grid-template-columns: 1fr;
+      }
+
+      .theme-picker {
         grid-template-columns: 1fr;
       }
 
@@ -382,9 +509,12 @@
         <div><span>Leader</span><strong id="leaderSize">10</strong></div>
         <div><span>Status</span><strong id="statusText">Pick snake</strong></div>
       </section>
-      <nav class="control-strip" aria-label="Game controls">
-        <button type="button" id="pauseButton">Pause</button>
-        <button type="button" id="newButton">New</button>
+      <nav class="game-menu" aria-label="Game controls">
+        <button class="menu-button" type="button" id="menuButton" aria-label="Open menu" aria-expanded="false">•••</button>
+        <div class="menu-panel" id="menuPanel" hidden>
+          <button type="button" id="pauseButton">Pause</button>
+          <button type="button" id="newButton">New</button>
+        </div>
       </nav>
     </header>
   </div>
@@ -400,12 +530,17 @@
           <button type="button" id="startGameButton">Start Zooming</button>
         </div>
       </div>
+      <div class="theme-picker" id="themePicker" aria-label="Background choices"></div>
       <div class="snake-grid" id="snakeGrid" aria-label="Snake choices"></div>
     </div>
   </section>
 
   <div class="overlay">
     <div class="notice" id="notice">Choose your snake to begin.</div>
+  </div>
+
+  <div class="joystick" id="joystick" aria-label="Move snake with thumb pad">
+    <div class="joystick-knob" id="joystickKnob"></div>
   </div>
 
   <section class="boss" id="bossOverlay" hidden>
@@ -420,10 +555,15 @@
     const canvas = document.querySelector("#game");
     const ctx = canvas.getContext("2d");
     const chooser = document.querySelector("#chooser");
+    const themePicker = document.querySelector("#themePicker");
     const snakeGrid = document.querySelector("#snakeGrid");
     const startGameButton = document.querySelector("#startGameButton");
+    const menuButton = document.querySelector("#menuButton");
+    const menuPanel = document.querySelector("#menuPanel");
     const pauseButton = document.querySelector("#pauseButton");
     const newButton = document.querySelector("#newButton");
+    const joystickPad = document.querySelector("#joystick");
+    const joystickKnob = document.querySelector("#joystickKnob");
     const notice = document.querySelector("#notice");
     const playerSizeEl = document.querySelector("#playerSize");
     const leaderSizeEl = document.querySelector("#leaderSize");
@@ -449,7 +589,36 @@
       { name: "Candy Snake", piece: "🍬", icon: "🍭", colors: ["#f472b6", "#22d3ee"], stripe: "#ffffff" },
       { name: "TV Snake", piece: "📺", icon: "📺", colors: ["#1f2937", "#64748b"], stripe: "#a7f3d0" },
       { name: "Dog Snake", piece: "🐕", icon: "🐶", colors: ["#a16207", "#facc15"], stripe: "#7c2d12" },
-      { name: "Cat Snake", piece: "🐱", icon: "🐱", colors: ["#475569", "#f8fafc"], stripe: "#f97316" }
+      { name: "Cat Snake", piece: "🐱", icon: "🐱", colors: ["#475569", "#f8fafc"], stripe: "#f97316" },
+      { name: "Racecar Snake", piece: "🏁", icon: "🏎️", colors: ["#dc2626", "#ef4444"], stripe: "#ffffff" },
+      { name: "Dragon Snake", piece: "💚", icon: "🐉", colors: ["#16a34a", "#65a30d"], stripe: "#bbf7d0" }
+    ];
+
+    const backgroundThemes = [
+      {
+        id: "space",
+        name: "Space",
+        icon: "✨ 🌙",
+        fill: "#08152f",
+        grid: "rgba(190, 220, 255, 0.12)",
+        decoration: "stars"
+      },
+      {
+        id: "jungle",
+        name: "Jungle",
+        icon: "🌿 🍃",
+        fill: "#dff7d8",
+        grid: "rgba(18, 95, 53, 0.13)",
+        decoration: "leaves"
+      },
+      {
+        id: "sea",
+        name: "Under the Sea",
+        icon: "🫧 🪸",
+        fill: "#d8f7ff",
+        grid: "rgba(18, 91, 132, 0.13)",
+        decoration: "bubbles"
+      }
     ];
 
     const worldSize = 5600;
@@ -464,6 +633,7 @@
     const bossSize = 1000;
     const keys = new Set();
     const pointer = { active: false, id: null, x: 0, y: 0 };
+    const joystick = { active: false, id: null, x: 0, y: 0 };
 
     let snakes = [];
     let pellets = [];
@@ -471,6 +641,7 @@
     let pieces = [];
     let camera = { x: 0, y: 0 };
     let selectedTypeIndex = 0;
+    let selectedThemeIndex = 0;
     let player = null;
     let running = false;
     let paused = false;
@@ -489,6 +660,21 @@
     }
 
     function buildChooser() {
+      themePicker.innerHTML = "";
+      backgroundThemes.forEach((theme, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `theme-card${index === selectedThemeIndex ? " is-selected" : ""}`;
+        button.innerHTML = `<strong>${theme.name}</strong><span>${theme.icon}</span>`;
+        button.addEventListener("click", () => {
+          selectedThemeIndex = index;
+          [...themePicker.children].forEach((child) => child.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          draw();
+        });
+        themePicker.appendChild(button);
+      });
+
       snakeGrid.innerHTML = "";
       snakeTypes.forEach((type, index) => {
         const button = document.createElement("button");
@@ -510,6 +696,9 @@
     function startGame() {
       chooser.hidden = true;
       bossOverlay.hidden = true;
+      setMenuOpen(false);
+      resetJoystick();
+      document.body.classList.add("is-playing");
       running = true;
       paused = false;
       bossMode = false;
@@ -674,6 +863,8 @@
 
       if (x || y) {
         player.turnGoal = Math.atan2(y, x);
+      } else if (joystick.active && (joystick.x || joystick.y)) {
+        player.turnGoal = Math.atan2(joystick.y, joystick.x);
       } else if (pointer.active) {
         const head = player.body[0];
         const world = screenToWorld(pointer.x, pointer.y);
@@ -1043,6 +1234,7 @@
       running = false;
       paused = true;
       bossMode = false;
+      document.body.classList.remove("is-playing");
       bossOverlay.hidden = false;
       bossTitle.textContent = title;
       bossText.textContent = text;
@@ -1055,6 +1247,7 @@
       paused = true;
       bossMode = false;
       bossState = null;
+      document.body.classList.remove("is-playing");
       bossOverlay.hidden = false;
       bossTitle.textContent = "Game Over";
       bossText.textContent = text;
@@ -1087,10 +1280,12 @@
     function drawWorld() {
       const width = window.innerWidth;
       const height = window.innerHeight;
+      const theme = backgroundThemes[selectedThemeIndex];
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "#f9fff4";
+      ctx.fillStyle = theme.fill;
       ctx.fillRect(0, 0, width, height);
-      ctx.strokeStyle = "rgba(23, 32, 51, 0.07)";
+      drawThemeDecorations(theme, width, height);
+      ctx.strokeStyle = theme.grid;
       ctx.lineWidth = 1;
       const spacing = 70;
       const startX = -mod(camera.x, spacing);
@@ -1106,6 +1301,54 @@
         ctx.moveTo(0, y);
         ctx.lineTo(width, y);
         ctx.stroke();
+      }
+    }
+
+    function drawThemeDecorations(theme, width, height) {
+      if (theme.decoration === "stars") {
+        ctx.fillStyle = "rgba(255, 246, 189, 0.82)";
+        for (let index = 0; index < 78; index += 1) {
+          const x = mod(index * 137 - camera.x * 0.18, width + 80) - 40;
+          const y = mod(index * 91 - camera.y * 0.18, height + 80) - 40;
+          const radius = index % 9 === 0 ? 2.6 : 1.4;
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = "rgba(122, 164, 255, 0.2)";
+        ctx.beginPath();
+        ctx.arc(width * 0.78, height * 0.22, 42, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+
+      if (theme.decoration === "leaves") {
+        for (let index = 0; index < 46; index += 1) {
+          const x = mod(index * 173 - camera.x * 0.12, width + 120) - 60;
+          const y = mod(index * 109 - camera.y * 0.12, height + 120) - 60;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate((index % 12) * 0.35);
+          ctx.fillStyle = index % 2 ? "rgba(25, 135, 84, 0.22)" : "rgba(101, 163, 13, 0.2)";
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 18, 7, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        return;
+      }
+
+      if (theme.decoration === "bubbles") {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.52)";
+        ctx.lineWidth = 2;
+        for (let index = 0; index < 54; index += 1) {
+          const x = mod(index * 151 - camera.x * 0.15, width + 90) - 45;
+          const y = mod(index * 83 - camera.y * 0.22, height + 90) - 45;
+          const radius = 5 + (index % 5) * 3;
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
     }
 
@@ -1303,7 +1546,7 @@
     function steerWithPointer(event) {
       if (chooser && !chooser.hidden) return;
       if (!running || paused || bossMode) return;
-      if (event.target && event.target.closest && event.target.closest("button, .chooser, .control-strip, .boss")) return;
+      if (event.target && event.target.closest && event.target.closest("button, .chooser, .game-menu, .joystick, .boss")) return;
       if (event.cancelable) event.preventDefault();
       pointer.active = true;
       pointer.id = event.pointerId;
@@ -1371,10 +1614,68 @@
       pointer.id = null;
     });
 
+    function setMenuOpen(open) {
+      menuPanel.hidden = !open;
+      menuButton.setAttribute("aria-expanded", String(open));
+    }
+
+    menuButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setMenuOpen(menuPanel.hidden);
+    });
+
+    window.addEventListener("click", (event) => {
+      if (event.target && event.target.closest && event.target.closest(".game-menu")) return;
+      setMenuOpen(false);
+    });
+
+    function updateJoystick(event) {
+      if (!running || paused || bossMode || (chooser && !chooser.hidden)) return;
+      if (event.cancelable) event.preventDefault();
+      const rect = joystickPad.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const rawX = event.clientX - centerX;
+      const rawY = event.clientY - centerY;
+      const distance = Math.hypot(rawX, rawY);
+      const limit = rect.width * 0.32;
+      const scale = distance > limit ? limit / distance : 1;
+      joystick.active = true;
+      joystick.id = event.pointerId;
+      joystick.x = rawX * scale;
+      joystick.y = rawY * scale;
+      joystickKnob.style.transform = `translate(calc(-50% + ${joystick.x}px), calc(-50% + ${joystick.y}px))`;
+      if (joystickPad.setPointerCapture) {
+        try {
+          joystickPad.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture is best-effort across browsers.
+        }
+      }
+    }
+
+    function resetJoystick(event) {
+      if (event && joystick.id !== null && event.pointerId !== joystick.id) return;
+      joystick.active = false;
+      joystick.id = null;
+      joystick.x = 0;
+      joystick.y = 0;
+      joystickKnob.style.transform = "translate(-50%, -50%)";
+    }
+
+    joystickPad.addEventListener("pointerdown", updateJoystick);
+    joystickPad.addEventListener("pointermove", (event) => {
+      if (!joystick.active || event.pointerId !== joystick.id) return;
+      updateJoystick(event);
+    });
+    joystickPad.addEventListener("pointerup", resetJoystick);
+    joystickPad.addEventListener("pointercancel", resetJoystick);
+
     function togglePause() {
       if (!running || bossMode) return;
       paused = !paused;
       pauseButton.textContent = paused ? "Resume" : "Pause";
+      setMenuOpen(false);
       notice.hidden = !paused;
       if (paused) notice.textContent = "Paused";
       updateHud();
@@ -1384,6 +1685,9 @@
     newButton.addEventListener("click", () => {
       running = false;
       paused = true;
+      setMenuOpen(false);
+      resetJoystick();
+      document.body.classList.remove("is-playing");
       chooser.hidden = false;
       bossOverlay.hidden = true;
       notice.hidden = false;
@@ -1394,6 +1698,7 @@
     bossButton.addEventListener("click", () => {
       if (!running) {
         chooser.hidden = false;
+        document.body.classList.remove("is-playing");
         bossOverlay.hidden = true;
         return;
       }

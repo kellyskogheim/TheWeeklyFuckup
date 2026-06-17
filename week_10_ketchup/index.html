@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Skip Count Speedway</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f8fbff;
+      --muted: rgba(248, 251, 255, 0.72);
+      --panel: rgba(9, 16, 27, 0.78);
+      --panel-strong: rgba(9, 16, 27, 0.94);
+      --line: rgba(255, 255, 255, 0.18);
+      --green: #3de284;
+      --red: #ff5f6d;
+      --yellow: #ffcf4f;
+      --blue: #55a8ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      user-select: none;
+      background: #08111b;
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 750;
+      cursor: pointer;
+      min-height: 44px;
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(85, 168, 255, 0.8);
+      outline-offset: 2px;
+    }
+
+    #game {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #142030;
+    }
+
+    .hud {
+      position: fixed;
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+      top: max(10px, env(safe-area-inset-top));
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .stats {
+      align-self: start;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(70px, auto));
+      gap: 8px;
+      max-width: min(820px, calc(100vw - 76px));
+    }
+
+    .stat {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(7, 12, 20, 0.58);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+      padding: 8px 10px;
+      backdrop-filter: blur(10px);
+    }
+
+    .label {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .value {
+      display: block;
+      overflow: hidden;
+      font-size: 18px;
+      font-weight: 850;
+      line-height: 1.05;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #menuButton {
+      width: 48px;
+      height: 44px;
+      padding: 0;
+      pointer-events: auto;
+      background: rgba(7, 12, 20, 0.66);
+      backdrop-filter: blur(10px);
+    }
+
+    #menuButton span {
+      display: inline-block;
+      font-size: 26px;
+      line-height: 0.5;
+      transform: translateY(-3px);
+    }
+
+    #menuPanel {
+      position: fixed;
+      top: calc(max(10px, env(safe-area-inset-top)) + 52px);
+      right: max(12px, env(safe-area-inset-right));
+      z-index: 6;
+      display: none;
+      width: min(210px, calc(100vw - 24px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      padding: 8px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+    }
+
+    #menuPanel.open {
+      display: grid;
+      gap: 8px;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 8;
+      display: grid;
+      place-items: center;
+      overflow-y: auto;
+      padding: 18px;
+      background:
+        linear-gradient(rgba(5, 9, 16, 0.08), rgba(5, 9, 16, 0.62)),
+        radial-gradient(circle at 50% 0%, rgba(85, 168, 255, 0.24), transparent 42%);
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    .start-panel {
+      width: min(720px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(8, 14, 24, 0.88);
+      padding: clamp(18px, 4vw, 32px);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(14px);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(36px, 8vw, 76px);
+      line-height: 0.92;
+      letter-spacing: 0;
+    }
+
+    .intro {
+      max-width: 620px;
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: clamp(16px, 2.6vw, 20px);
+      line-height: 1.4;
+    }
+
+    .level-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin: 18px 0 20px;
+    }
+
+    .level-choice {
+      min-height: 54px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .level-choice.selected {
+      border-color: rgba(61, 226, 132, 0.95);
+      background: rgba(61, 226, 132, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(61, 226, 132, 0.35);
+    }
+
+    .level-choice small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .chooser-label {
+      display: block;
+      margin: 16px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .color-grid {
+      display: grid;
+      grid-template-columns: repeat(9, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 0 20px;
+    }
+
+    .color-choice {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 50px;
+      padding: 6px;
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .color-choice.selected {
+      border-color: rgba(248, 251, 255, 0.92);
+      background: rgba(255, 255, 255, 0.15);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+    }
+
+    .swatch {
+      width: 28px;
+      height: 28px;
+      border: 2px solid rgba(255, 255, 255, 0.78);
+      border-radius: 50%;
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.26);
+    }
+
+    .primary-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #startButton,
+    #nextLevelButton {
+      min-height: 52px;
+      border: 0;
+      background: linear-gradient(135deg, #2ddf88, #3ba9ff);
+      color: #04101a;
+      box-shadow: 0 12px 26px rgba(45, 223, 136, 0.26);
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .joystick {
+      position: fixed;
+      right: max(14px, env(safe-area-inset-right));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      z-index: 5;
+      width: 124px;
+      height: 124px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.18), transparent 34%),
+        rgba(7, 12, 20, 0.62);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+      touch-action: none;
+      pointer-events: auto;
+    }
+
+    .joystick::before,
+    .joystick::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 22px;
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.42);
+    }
+
+    .joystick::before {
+      left: 20px;
+    }
+
+    .joystick::after {
+      right: 20px;
+    }
+
+    .joystick-knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 58px;
+      height: 58px;
+      border: 2px solid rgba(255, 255, 255, 0.82);
+      border-radius: 50%;
+      background: linear-gradient(145deg, rgba(85, 168, 255, 0.92), rgba(61, 226, 132, 0.86));
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.28);
+      transform: translate(-50%, -50%);
+      transition: transform 90ms ease;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: max(24px, env(safe-area-inset-bottom));
+      z-index: 7;
+      min-width: min(360px, calc(100vw - 28px));
+      max-width: calc(100vw - 28px);
+      transform: translate(-50%, 120px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(7, 12, 20, 0.84);
+      padding: 12px 16px;
+      color: var(--ink);
+      text-align: center;
+      opacity: 0;
+      transition: transform 180ms ease, opacity 180ms ease;
+      backdrop-filter: blur(10px);
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+
+    @media (max-width: 720px) {
+      .overlay {
+        align-items: start;
+      }
+
+      .start-panel {
+        margin: min(18px, env(safe-area-inset-top)) 0;
+      }
+
+      .stats {
+        grid-template-columns: repeat(3, minmax(72px, 1fr));
+      }
+
+      .stat {
+        padding: 7px 8px;
+      }
+
+      .value {
+        font-size: 16px;
+      }
+
+      .level-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .color-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .primary-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .stats {
+        grid-template-columns: repeat(2, minmax(72px, 1fr));
+        max-width: calc(100vw - 76px);
+      }
+
+      .joystick {
+        width: 108px;
+        height: 108px;
+      }
+
+      .joystick-knob {
+        width: 52px;
+        height: 52px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" aria-label="Skip counting racing game"></canvas>
+
+  <div class="hud" aria-live="polite">
+    <div class="stats">
+      <div class="stat">
+        <span class="label">Level</span>
+        <span class="value" id="levelText">1 / 10</span>
+      </div>
+      <div class="stat">
+        <span class="label">Next</span>
+        <span class="value" id="nextText">1</span>
+      </div>
+      <div class="stat">
+        <span class="label">Accuracy</span>
+        <span class="value" id="accuracyText">100%</span>
+      </div>
+      <div class="stat">
+        <span class="label">Score</span>
+        <span class="value" id="scoreText">0 / 10</span>
+      </div>
+      <div class="stat">
+        <span class="label">Race</span>
+        <span class="value" id="raceText">0%</span>
+      </div>
+    </div>
+    <button id="menuButton" type="button" aria-label="Open menu"><span>...</span></button>
+  </div>
+
+  <div id="menuPanel" aria-label="Game menu">
+    <button id="resumeButton" type="button">Resume</button>
+    <button id="restartButton" type="button">Restart Level</button>
+    <button id="homeButton" type="button">Level Select</button>
+  </div>
+
+  <div class="joystick" id="joystick" aria-label="Steering joystick" role="application">
+    <div class="joystick-knob" id="joystickKnob"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <section class="overlay" id="startOverlay">
+    <div class="start-panel">
+      <h1>Skip Count Speedway</h1>
+      <p class="intro">Steer into the next number in the sequence. Correct pickups launch your car forward; wrong pickups make it wobble and lose speed.</p>
+      <span class="chooser-label">Car color</span>
+      <div class="color-grid" id="colorGrid" aria-label="Choose your race car color"></div>
+      <span class="chooser-label">Level</span>
+      <div class="level-grid" id="levelGrid" aria-label="Choose a level"></div>
+      <div class="primary-actions">
+        <button id="startButton" type="button">Start Race</button>
+        <p class="hint">Arrow keys, A/D, swipes, and the on-screen buttons all steer. Win each race with 70% accuracy or better.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="overlay hidden" id="resultOverlay">
+    <div class="start-panel">
+      <h1 id="resultTitle">Victory!</h1>
+      <p class="intro" id="resultText"></p>
+      <div class="primary-actions">
+        <button id="nextLevelButton" type="button">Next Level</button>
+        <button id="tryAgainButton" type="button">Try Again</button>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function roundRect(x, y, width, height, radius) {
+        const r = Math.min(radius || 0, Math.abs(width) / 2, Math.abs(height) / 2);
+        this.moveTo(x + r, y);
+        this.lineTo(x + width - r, y);
+        this.quadraticCurveTo(x + width, y, x + width, y + r);
+        this.lineTo(x + width, y + height - r);
+        this.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        this.lineTo(x + r, y + height);
+        this.quadraticCurveTo(x, y + height, x, y + height - r);
+        this.lineTo(x, y + r);
+        this.quadraticCurveTo(x, y, x + r, y);
+        return this;
+      };
+    }
+
+    const levelGrid = document.getElementById("levelGrid");
+    const colorGrid = document.getElementById("colorGrid");
+    const startOverlay = document.getElementById("startOverlay");
+    const resultOverlay = document.getElementById("resultOverlay");
+    const resultTitle = document.getElementById("resultTitle");
+    const resultText = document.getElementById("resultText");
+    const nextLevelButton = document.getElementById("nextLevelButton");
+    const menuButton = document.getElementById("menuButton");
+    const menuPanel = document.getElementById("menuPanel");
+    const toast = document.getElementById("toast");
+    const joystick = document.getElementById("joystick");
+    const joystickKnob = document.getElementById("joystickKnob");
+
+    const ui = {
+      levelText: document.getElementById("levelText"),
+      nextText: document.getElementById("nextText"),
+      accuracyText: document.getElementById("accuracyText"),
+      scoreText: document.getElementById("scoreText"),
+      raceText: document.getElementById("raceText"),
+    };
+
+    const config = {
+      levelCount: 10,
+      targetsPerLevel: 10,
+      lanes: 3,
+      roadWidthRatio: 0.58,
+      raceDistance: 4700,
+      playerBaseSpeed: 168,
+      rivalSpeed: 202,
+      boostProgress: 90,
+      wrongProgressPenalty: 18,
+      wobbleDuration: 0.74,
+      boostDuration: 0.56,
+      spawnAhead: 1280,
+      pickupSpacing: 420,
+    };
+
+    const state = {
+      mode: "start",
+      selectedLevel: 1,
+      selectedColor: "blue",
+      level: 1,
+      lane: 1,
+      targetLane: 1,
+      laneOffset: 1,
+      playerProgress: 0,
+      rivalProgress: 0,
+      currentStep: 0,
+      correct: 0,
+      wrong: 0,
+      pickups: [],
+      particles: [],
+      boostTimer: 0,
+      wobbleTimer: 0,
+      toastTimer: 0,
+      message: "",
+      lastTime: 0,
+      frameId: null,
+      roadScroll: 0,
+      raceDone: false,
+    };
+
+    const carOptions = [
+      { name: "purple", label: "Purple", color: "#8d5cff", trim: "#f4ecff", rival: "yellow" },
+      { name: "yellow", label: "Yellow", color: "#ffd84d", trim: "#1b1720", rival: "purple" },
+      { name: "orange", label: "Orange", color: "#ff8a30", trim: "#241309", rival: "blue" },
+      { name: "red", label: "Red", color: "#ff5668", trim: "#fff0f2", rival: "green" },
+      { name: "blue", label: "Blue", color: "#2fcbff", trim: "#fff15f", rival: "orange" },
+      { name: "black", label: "Black", color: "#11151c", trim: "#f5f6f8", rival: "gray" },
+      { name: "gray", label: "Gray", color: "#9aa4ad", trim: "#151923", rival: "black" },
+      { name: "brown", label: "Brown", color: "#8b5735", trim: "#ffe0b8", rival: "green" },
+      { name: "green", label: "Green", color: "#35d06f", trim: "#06170d", rival: "red" },
+    ];
+
+    const colors = {
+      road: "#29313b",
+      roadDark: "#202832",
+      line: "rgba(255, 255, 255, 0.34)",
+      grass: "#19725b",
+      grassDark: "#105f53",
+      numberGood: "#3de284",
+      numberBad: "#ffcf4f",
+    };
+
+    function carPalette(name) {
+      return carOptions.find((option) => option.name === name) || carOptions[2];
+    }
+
+    function resizeCanvas() {
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function currentTarget() {
+      return state.level * (state.currentStep + 1);
+    }
+
+    function accuracy() {
+      const attempts = state.correct + state.wrong;
+      if (!attempts) return 1;
+      return state.correct / attempts;
+    }
+
+    function createLevelButtons() {
+      levelGrid.innerHTML = "";
+      for (let level = 1; level <= config.levelCount; level += 1) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "level-choice";
+        button.dataset.level = String(level);
+        button.innerHTML = `Level ${level}<small>${level}, ${level * 2}, ${level * 3}...</small>`;
+        button.addEventListener("click", () => {
+          state.selectedLevel = level;
+          updateLevelButtons();
+        });
+        levelGrid.appendChild(button);
+      }
+      updateLevelButtons();
+    }
+
+    function createColorButtons() {
+      colorGrid.innerHTML = "";
+      carOptions.forEach((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "color-choice";
+        button.dataset.color = option.name;
+        button.setAttribute("aria-label", option.label);
+        button.title = option.label;
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = option.color;
+        button.appendChild(swatch);
+        button.addEventListener("click", () => {
+          state.selectedColor = option.name;
+          updateColorButtons();
+          draw();
+        });
+        colorGrid.appendChild(button);
+      });
+      updateColorButtons();
+    }
+
+    function updateColorButtons() {
+      [...colorGrid.children].forEach((button) => {
+        const selected = button.dataset.color === state.selectedColor;
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+    }
+
+    function updateLevelButtons() {
+      [...levelGrid.children].forEach((button, index) => {
+        button.classList.toggle("selected", index + 1 === state.selectedLevel);
+      });
+    }
+
+    function startLevel(level) {
+      state.mode = "play";
+      state.level = clamp(level, 1, config.levelCount);
+      state.selectedLevel = state.level;
+      state.lane = 1;
+      state.targetLane = 1;
+      state.laneOffset = 1;
+      state.playerProgress = 0;
+      state.rivalProgress = 0;
+      state.currentStep = 0;
+      state.correct = 0;
+      state.wrong = 0;
+      state.boostTimer = 0;
+      state.wobbleTimer = 0;
+      state.toastTimer = 0;
+      state.raceDone = false;
+      if (state.frameId) {
+        cancelAnimationFrame(state.frameId);
+        state.frameId = null;
+      }
+      state.pickups = buildPickups(state.level);
+      state.particles = [];
+      state.lastTime = performance.now();
+      startOverlay.classList.add("hidden");
+      resultOverlay.classList.add("hidden");
+      menuPanel.classList.remove("open");
+      showToast(`Level ${state.level}: count by ${state.level}s`);
+      updateHud();
+      state.frameId = requestAnimationFrame(loop);
+    }
+
+    function buildPickups(level) {
+      const pickups = [];
+      for (let step = 0; step < config.targetsPerLevel; step += 1) {
+        const correctValue = level * (step + 1);
+        const baseProgress = 430 + step * config.pickupSpacing;
+        const correctLane = Math.floor(Math.random() * config.lanes);
+        const wrongLanes = shuffleArray(
+          Array.from({ length: config.lanes }, (_, lane) => lane).filter((lane) => lane !== correctLane)
+        );
+        pickups.push({
+          value: correctValue,
+          step,
+          lane: correctLane,
+          progress: baseProgress,
+          correct: true,
+          collected: false,
+        });
+
+        const wrongCount = config.lanes - 1;
+        const wrongValues = makeWrongValues(correctValue, level, step, wrongCount);
+        wrongValues.forEach((value, index) => {
+          pickups.push({
+            value,
+            step,
+            lane: wrongLanes[index],
+            progress: baseProgress + (index - 1) * 28,
+            correct: false,
+            collected: false,
+          });
+        });
+      }
+      return pickups;
+    }
+
+    function shuffleArray(items) {
+      const shuffled = [...items];
+      for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+      }
+      return shuffled;
+    }
+
+    function makeWrongValues(correctValue, level, step, count) {
+      const values = [];
+      const offsets = [-level, level, -1, 1, level + 1, -(level + 1), 2, -2, level * 2 + 1];
+      for (const offset of offsets) {
+        const candidate = correctValue + offset;
+        if (candidate > 0 && candidate !== correctValue && !values.includes(candidate)) {
+          values.push(candidate);
+        }
+        if (values.length >= count) break;
+      }
+
+      for (let fallback = correctValue + 1; values.length < count; fallback += 1) {
+        if (fallback !== correctValue && !values.includes(fallback)) {
+          values.push(fallback);
+        }
+      }
+      return values;
+    }
+
+    function steer(direction) {
+      if (state.mode !== "play") return;
+      state.targetLane = clamp(state.targetLane + direction, 0, config.lanes - 1);
+    }
+
+    function moveToLane(lane) {
+      if (state.mode !== "play") return;
+      state.targetLane = clamp(lane, 0, config.lanes - 1);
+    }
+
+    function update(dt) {
+      if (state.mode !== "play") return;
+
+      state.boostTimer = Math.max(0, state.boostTimer - dt);
+      state.wobbleTimer = Math.max(0, state.wobbleTimer - dt);
+      state.toastTimer = Math.max(0, state.toastTimer - dt);
+      state.roadScroll += dt * (state.playerSpeed || config.playerBaseSpeed) * 0.74;
+
+      const laneDelta = state.targetLane - state.laneOffset;
+      state.laneOffset += laneDelta * Math.min(1, dt * 9);
+      if (Math.abs(state.laneOffset - state.targetLane) < 0.02) {
+        state.laneOffset = state.targetLane;
+        state.lane = state.targetLane;
+      }
+
+      const boostSpeed = state.boostTimer > 0 ? 54 : 0;
+      const wobbleSlow = state.wobbleTimer > 0 ? 76 : 0;
+      state.playerSpeed = Math.max(86, config.playerBaseSpeed + boostSpeed - wobbleSlow);
+      state.playerProgress += state.playerSpeed * dt;
+      state.rivalProgress += config.rivalSpeed * dt;
+
+      checkPickups();
+      updateParticles(dt);
+      updateHud();
+      checkFinish();
+    }
+
+    function checkPickups() {
+      const playerLane = Math.round(state.laneOffset);
+      const hitWindow = 34;
+      state.pickups.forEach((pickup) => {
+        if (pickup.collected || pickup.step !== state.currentStep) return;
+        if (pickup.lane !== playerLane) return;
+        const delta = pickup.progress - state.playerProgress;
+        if (Math.abs(delta) > hitWindow) return;
+
+        pickup.collected = true;
+        if (pickup.correct) {
+          collectCorrect(pickup);
+        } else {
+          collectWrong(pickup);
+        }
+      });
+
+      const missedCorrect = state.pickups.find((pickup) => (
+        pickup.correct &&
+        !pickup.collected &&
+        pickup.step === state.currentStep &&
+        pickup.progress < state.playerProgress - hitWindow
+      ));
+      if (missedCorrect) {
+        missedCorrect.collected = true;
+        state.wrong += 1;
+        state.currentStep += 1;
+        state.wobbleTimer = config.wobbleDuration * 0.72;
+        showToast(`Missed ${missedCorrect.value}`);
+      }
+    }
+
+    function collectCorrect(pickup) {
+      state.correct += 1;
+      state.currentStep += 1;
+      state.boostTimer = config.boostDuration;
+      state.playerProgress += config.boostProgress;
+      burst(pickup.lane, pickup.progress, colors.numberGood, 16);
+      showToast(`Boost! ${pickup.value}`);
+    }
+
+    function collectWrong(pickup) {
+      state.wrong += 1;
+      state.wobbleTimer = config.wobbleDuration;
+      state.playerProgress = Math.max(0, state.playerProgress - config.wrongProgressPenalty);
+      burst(pickup.lane, pickup.progress, colors.red, 12);
+      showToast(`${pickup.value} wobbled you`);
+    }
+
+    function checkFinish() {
+      if (state.raceDone) return;
+      const attempts = state.correct + state.wrong;
+      const allTargetsHandled = state.currentStep >= config.targetsPerLevel;
+      const rivalFinished = state.rivalProgress >= config.raceDistance;
+      const playerFinished = state.playerProgress >= config.raceDistance || allTargetsHandled;
+
+      if (!playerFinished && !rivalFinished) return;
+
+      state.raceDone = true;
+      state.mode = "result";
+      const pct = Math.round(accuracy() * 100);
+      const playerWins = pct >= 70 && state.playerProgress >= state.rivalProgress;
+      const perfect = state.correct === config.targetsPerLevel && state.wrong === 0;
+
+      resultTitle.textContent = playerWins ? (perfect ? "Perfect Lap!" : "You Win!") : "Rival Wins";
+      resultText.textContent = playerWins
+        ? `You finished Level ${state.level} with ${state.correct} correct out of ${attempts || 10}. Accuracy: ${pct}%.`
+        : `You got ${state.correct} correct out of ${attempts || 10}. Accuracy: ${pct}%. The rival's steady pace beats anything under 70%.`;
+
+      if (state.level >= config.levelCount && playerWins) {
+        nextLevelButton.textContent = "Level Select";
+      } else {
+        nextLevelButton.textContent = playerWins ? "Next Level" : "Practice Again";
+      }
+
+      setTimeout(() => {
+        resultOverlay.classList.remove("hidden");
+      }, 260);
+    }
+
+    function updateParticles(dt) {
+      state.particles.forEach((particle) => {
+        particle.age += dt;
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.vy += 30 * dt;
+      });
+      state.particles = state.particles.filter((particle) => particle.age < particle.life);
+    }
+
+    function burst(lane, progress, color, count) {
+      const point = laneToPoint(lane, progress);
+      for (let i = 0; i < count; i += 1) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 52 + Math.random() * 110;
+        state.particles.push({
+          x: point.x,
+          y: point.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          age: 0,
+          life: 0.38 + Math.random() * 0.34,
+          color,
+          size: 3 + Math.random() * 5,
+        });
+      }
+    }
+
+    function showToast(message) {
+      state.message = message;
+      state.toastTimer = 1.25;
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 1250);
+    }
+
+    function updateHud() {
+      const pct = Math.round(accuracy() * 100);
+      ui.levelText.textContent = `${state.level} / ${config.levelCount}`;
+      ui.nextText.textContent = state.currentStep < config.targetsPerLevel ? currentTarget() : "Finish";
+      ui.accuracyText.textContent = `${pct}%`;
+      ui.scoreText.textContent = `${state.correct} / ${config.targetsPerLevel}`;
+      ui.raceText.textContent = `${Math.round(clamp(state.playerProgress / config.raceDistance, 0, 1) * 100)}%`;
+    }
+
+    function loop(now) {
+      const dt = Math.min(0.04, (now - state.lastTime) / 1000 || 0);
+      state.lastTime = now;
+      update(dt);
+      draw();
+      if (state.mode === "play") {
+        state.frameId = requestAnimationFrame(loop);
+      } else {
+        state.frameId = null;
+      }
+    }
+
+    function roadMetrics() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const roadWidth = clamp(w * config.roadWidthRatio, 260, Math.min(600, w - 28));
+      const roadLeft = (w - roadWidth) / 2;
+      const laneWidth = roadWidth / config.lanes;
+      return { w, h, roadWidth, roadLeft, laneWidth };
+    }
+
+    function laneToPoint(lane, progress) {
+      const metrics = roadMetrics();
+      return {
+        x: metrics.roadLeft + metrics.laneWidth * (lane + 0.5),
+        y: metrics.h - 118 - (progress - state.playerProgress) * 0.82,
+      };
+    }
+
+    function draw() {
+      const metrics = roadMetrics();
+      drawScenery(metrics);
+      drawRoad(metrics);
+      drawPickups(metrics);
+      drawFinish(metrics);
+      drawRival(metrics);
+      drawPlayer(metrics);
+      drawParticles();
+      drawMiniProgress(metrics);
+    }
+
+    function drawScenery({ w, h, roadLeft, roadWidth }) {
+      const sky = ctx.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, "#14294a");
+      sky.addColorStop(0.42, "#266077");
+      sky.addColorStop(1, "#115346");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = colors.grassDark;
+      ctx.fillRect(0, h * 0.38, w, h * 0.62);
+      ctx.fillStyle = colors.grass;
+      for (let i = 0; i < 26; i += 1) {
+        const side = i % 2 === 0 ? roadLeft - 44 : roadLeft + roadWidth + 44;
+        const x = side + Math.sin(i * 4.7) * 72;
+        const y = ((i * 146 + state.roadScroll * 0.7) % (h + 180)) - 90;
+        drawTree(x, y, 0.72 + (i % 5) * 0.08);
+      }
+    }
+
+    function drawTree(x, y, scale) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#5f3b24";
+      ctx.fillRect(-4, 18, 8, 28);
+      ctx.fillStyle = "#1ca65d";
+      ctx.beginPath();
+      ctx.arc(0, 10, 18, 0, Math.PI * 2);
+      ctx.arc(-12, 18, 13, 0, Math.PI * 2);
+      ctx.arc(13, 20, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawRoad({ h, roadLeft, roadWidth, laneWidth }) {
+      ctx.fillStyle = colors.roadDark;
+      ctx.fillRect(roadLeft - 16, 0, roadWidth + 32, h);
+      ctx.fillStyle = colors.road;
+      ctx.fillRect(roadLeft, 0, roadWidth, h);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.lineWidth = 5;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(roadLeft + 6, 0);
+      ctx.lineTo(roadLeft + 6, h);
+      ctx.moveTo(roadLeft + roadWidth - 6, 0);
+      ctx.lineTo(roadLeft + roadWidth - 6, h);
+      ctx.stroke();
+
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([26, 26]);
+      ctx.lineDashOffset = -state.roadScroll % 52;
+      for (let lane = 1; lane < config.lanes; lane += 1) {
+        const x = roadLeft + laneWidth * lane;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    function drawPickups() {
+      state.pickups.forEach((pickup) => {
+        if (pickup.collected) return;
+        const point = laneToPoint(pickup.lane, pickup.progress);
+        if (point.y < -90 || point.y > window.innerHeight + 80) return;
+        const active = pickup.step === state.currentStep;
+        const radius = active ? 27 : 20;
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.globalAlpha = active ? 1 : 0.28;
+        ctx.fillStyle = pickup.correct && active ? colors.numberGood : colors.numberBad;
+        ctx.strokeStyle = "rgba(255,255,255,0.86)";
+        ctx.lineWidth = active ? 3 : 2;
+        ctx.beginPath();
+        ctx.roundRect(-radius, -radius, radius * 2, radius * 2, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#07111d";
+        ctx.font = `900 ${pickup.value >= 100 ? 18 : 22}px Segoe UI, system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(pickup.value), 0, 1);
+        ctx.restore();
+      });
+    }
+
+    function drawFinish({ roadLeft, roadWidth }) {
+      const y = window.innerHeight - 118 - (config.raceDistance - state.playerProgress) * 0.82;
+      if (y < -70 || y > window.innerHeight + 120) return;
+      const square = 18;
+      for (let row = 0; row < 3; row += 1) {
+        for (let col = 0; col < Math.ceil(roadWidth / square); col += 1) {
+          ctx.fillStyle = (row + col) % 2 === 0 ? "#fff" : "#101820";
+          ctx.fillRect(roadLeft + col * square, y + row * square, square, square);
+        }
+      }
+    }
+
+    function drawCar(x, y, body, trim, scale, wobble) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(wobble);
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.beginPath();
+      ctx.ellipse(0, 25, 28, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.roundRect(-24, -34, 48, 68, 10);
+      ctx.fill();
+      ctx.fillStyle = trim;
+      ctx.beginPath();
+      ctx.roundRect(-14, -20, 28, 24, 6);
+      ctx.fill();
+      ctx.fillStyle = "#07111d";
+      ctx.fillRect(-28, -24, 8, 18);
+      ctx.fillRect(20, -24, 8, 18);
+      ctx.fillRect(-28, 14, 8, 18);
+      ctx.fillRect(20, 14, 8, 18);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillRect(-14, -39, 28, 9);
+      ctx.restore();
+    }
+
+    function drawPlayer() {
+      const metrics = roadMetrics();
+      const x = metrics.roadLeft + metrics.laneWidth * (state.laneOffset + 0.5);
+      const wobble = state.wobbleTimer > 0 ? Math.sin(performance.now() * 0.045) * 0.17 : 0;
+      const y = metrics.h - 118 + Math.sin(performance.now() * 0.015) * (state.boostTimer > 0 ? 3 : 1);
+      const player = carPalette(state.selectedColor);
+      drawCar(x, y, player.color, player.trim, 1, wobble);
+
+      if (state.boostTimer > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = player.color;
+        ctx.beginPath();
+        ctx.moveTo(x - 17, y + 36);
+        ctx.lineTo(x, y + 76 + Math.random() * 14);
+        ctx.lineTo(x + 17, y + 36);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function drawRival() {
+      const metrics = roadMetrics();
+      const lane = 0.58;
+      const x = metrics.roadLeft + metrics.laneWidth * lane;
+      const y = metrics.h - 118 - (state.rivalProgress - state.playerProgress) * 0.82;
+      if (y < -90 || y > metrics.h + 90) return;
+      const player = carPalette(state.selectedColor);
+      const rival = carPalette(player.rival);
+      drawCar(x, y, rival.color, rival.trim, 0.92, 0);
+    }
+
+    function drawParticles() {
+      state.particles.forEach((particle) => {
+        const fade = 1 - particle.age / particle.life;
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = particle.color;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size * fade, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+    }
+
+    function drawMiniProgress({ w, h }) {
+      const x = Math.max(12, w - 34);
+      const top = Math.max(88, h * 0.18);
+      const height = h * 0.58;
+      ctx.fillStyle = "rgba(7,12,20,0.55)";
+      ctx.fillRect(x, top, 10, height);
+      const player = carPalette(state.selectedColor);
+      const rival = carPalette(player.rival);
+      ctx.fillStyle = rival.color;
+      ctx.fillRect(x - 5, top + height * (1 - clamp(state.rivalProgress / config.raceDistance, 0, 1)) - 3, 20, 6);
+      ctx.fillStyle = player.color;
+      ctx.fillRect(x - 5, top + height * (1 - clamp(state.playerProgress / config.raceDistance, 0, 1)) - 3, 20, 6);
+    }
+
+    function togglePause() {
+      if (state.mode === "play") {
+        state.mode = "pause";
+        showToast("Paused");
+      } else if (state.mode === "pause") {
+        state.mode = "play";
+        state.lastTime = performance.now();
+        if (!state.frameId) {
+          state.frameId = requestAnimationFrame(loop);
+        }
+        showToast("Go!");
+      }
+    }
+
+    let lastControl = { key: "", time: 0 };
+
+    function runControl(key, action) {
+      const now = performance.now();
+      if (lastControl.key === key && now - lastControl.time < 220) return;
+      lastControl = { key, time: now };
+      action();
+    }
+
+    function handleControlEvent(event) {
+      const control = event.target.closest("button");
+      if (!control) return;
+
+      const levelChoice = control.closest(".level-choice");
+      if (levelChoice) {
+        event.preventDefault();
+        event.stopPropagation();
+        runControl(`level-${levelChoice.dataset.level}`, () => {
+          state.selectedLevel = Number(levelChoice.dataset.level);
+          updateLevelButtons();
+        });
+        return;
+      }
+
+      const actions = {
+        startButton: () => startLevel(state.selectedLevel),
+        tryAgainButton: () => startLevel(state.level),
+        restartButton: () => startLevel(state.level),
+        nextLevelButton: () => {
+          if (state.level >= config.levelCount && accuracy() >= 0.7) {
+            state.mode = "start";
+            resultOverlay.classList.add("hidden");
+            startOverlay.classList.remove("hidden");
+            return;
+          }
+          const nextLevel = accuracy() >= 0.7 ? state.level + 1 : state.level;
+          startLevel(clamp(nextLevel, 1, config.levelCount));
+        },
+        resumeButton: () => {
+          menuPanel.classList.remove("open");
+          if (state.mode === "pause") togglePause();
+        },
+        homeButton: () => {
+          state.mode = "start";
+          startOverlay.classList.remove("hidden");
+          resultOverlay.classList.add("hidden");
+          menuPanel.classList.remove("open");
+          draw();
+        },
+        menuButton: () => {
+          if (state.mode === "play") {
+            state.mode = "pause";
+            showToast("Paused");
+          }
+          menuPanel.classList.toggle("open");
+        },
+      };
+
+      const action = actions[control.id];
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runControl(control.id, action);
+    }
+
+    const joystickState = {
+      active: false,
+      pointerId: null,
+      lastDirection: 0,
+      lastMoveAt: 0,
+    };
+
+    function updateJoystickKnob(dx, dy) {
+      const maxDistance = 34;
+      const distance = Math.min(maxDistance, Math.hypot(dx, dy));
+      const angle = Math.atan2(dy, dx || 0);
+      const x = Math.cos(angle) * distance;
+      const y = Math.sin(angle) * distance;
+      joystickKnob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    }
+
+    function resetJoystick() {
+      joystickState.active = false;
+      joystickState.pointerId = null;
+      joystickState.lastDirection = 0;
+      joystickKnob.style.transform = "translate(-50%, -50%)";
+    }
+
+    function handleJoystickMove(event) {
+      if (!joystickState.active || event.pointerId !== joystickState.pointerId) return;
+      event.preventDefault();
+      const rect = joystick.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = event.clientX - centerX;
+      const dy = event.clientY - centerY;
+      updateJoystickKnob(dx, dy);
+
+      const now = performance.now();
+      const direction = dx < -18 ? -1 : dx > 18 ? 1 : 0;
+      if (!direction) {
+        joystickState.lastDirection = 0;
+        return;
+      }
+
+      if (direction !== joystickState.lastDirection || now - joystickState.lastMoveAt > 280) {
+        steer(direction);
+        joystickState.lastDirection = direction;
+        joystickState.lastMoveAt = now;
+      }
+    }
+
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+      draw();
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
+        steer(-1);
+      } else if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
+        steer(1);
+      } else if (event.key === " " || event.key === "Enter") {
+        if (state.mode === "start") startLevel(state.selectedLevel);
+      } else if (event.key.toLowerCase() === "p" || event.key === "Escape") {
+        togglePause();
+      }
+    });
+
+    let touchStartX = null;
+    canvas.addEventListener("pointerdown", (event) => {
+      touchStartX = event.clientX;
+    });
+
+    canvas.addEventListener("pointerup", (event) => {
+      if (touchStartX === null) return;
+      const delta = event.clientX - touchStartX;
+      if (Math.abs(delta) > 24) {
+        steer(delta > 0 ? 1 : -1);
+      }
+      touchStartX = null;
+    });
+
+    joystick.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      joystickState.active = true;
+      joystickState.pointerId = event.pointerId;
+      joystickState.lastDirection = 0;
+      joystickState.lastMoveAt = 0;
+      joystick.setPointerCapture(event.pointerId);
+      handleJoystickMove(event);
+    });
+
+    joystick.addEventListener("pointermove", handleJoystickMove);
+    joystick.addEventListener("pointerup", (event) => {
+      if (event.pointerId === joystickState.pointerId) resetJoystick();
+    });
+    joystick.addEventListener("pointercancel", resetJoystick);
+
+    document.addEventListener("pointerup", handleControlEvent, true);
+    document.addEventListener("click", handleControlEvent, true);
+
+    createColorButtons();
+    createLevelButtons();
+    resizeCanvas();
+    updateHud();
+    draw();
+  </script>
+</body>
+</html>
