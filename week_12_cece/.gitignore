@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+*.db
+*.sqlite
+*.sqlite3
+token.json
+credentials.json
+client_secret*.json
+outputs/
+tmp/
+__pycache__/
+*.pyc

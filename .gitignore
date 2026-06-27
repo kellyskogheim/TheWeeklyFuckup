@@ -4,6 +4,7 @@ __pycache__/
 **/*.mp4
 **/*.env
 **/*.pdf
+**/*.xlsx
 week_02_running_loop/*.txt
 week_02_running_loop/*.log
 week_02_running_loop/*.gpx
@@ -17,3 +18,8 @@ week_06_madame_garderobe/token.json
 week_06_madame_garderobe/garderobe/
 week_06_madame_garderobe/garderobe.db
 week_06_madame_garderobe/.env
+week_12_cece/data/
+week_12_cece/outputs/
+week_12_cece/tmp/
+week_12_cece/node_modules/
+
