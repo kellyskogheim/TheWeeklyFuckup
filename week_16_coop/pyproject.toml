@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meijer-saver"
+version = "0.2.0"
+description = "A local, human-in-the-loop Meijer savings assistant."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "playwright>=1.50,<2",
+  "pydantic>=2.10,<3",
+  "rich>=13.9,<15",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+meijer-saver = "meijer_saver.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meijer_saver"]
+
+[tool.pytest.ini_options]
+addopts = "-q --basetemp=.meijer-saver/pytest-tmp -p no:cacheprovider"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
