@@ -1,14 +1,36 @@
-# Meijer Saver
+# DG Saver
 
-A local, human-in-the-loop Python CLI for planning Meijer savings while respecting product-quality
-preferences. Development is intentionally incremental, with a review gate after each phase.
+A local Python CLI for finding unusually strong Dollar General deals, with donation usefulness as
+a future ranking signal. Development is incremental and stops for review after every phase.
 
 ## Implemented phases
 
-- Phase 1 provides the CLI, validated settings, SQLite bootstrap, sanitized fixture boundary, and
-  offline tests.
-- Phase 2 provides dedicated Chrome-profile management and human-in-the-loop Meijer login. It does
-  not read Bitwarden, clip coupons, redeem rewards, or change a cart.
+Phase 0 provides:
+
+- the `dg-saver` CLI and non-secret local configuration;
+- an idempotent SQLite bootstrap for later phases;
+- an offline test and fixture boundary;
+- local-data and credential-security rules.
+
+Phase 1 adds a public, read-only automation feasibility probe:
+
+- `probe fixtures` validates extraction contracts entirely offline;
+- `probe live` opens headed, ephemeral Chrome and checks the public coupon and weekly-ad pages;
+- both modes fail closed when required page signals disappear;
+- optional JSON output contains only page status and aggregate signals.
+
+Phase 2 adds public offer extraction and conservative normalization:
+
+- every advertised coupon is loaded before extraction begins;
+- coupon type, brand, savings text/cents, visible qualification text, expiration, quantity and
+  redemption-limit badges, and issuer are normalized when unambiguous;
+- weekly-ad item controls are preserved verbatim and simple price phrases are extracted;
+- deterministic IDs allow later scans to compare the same visible offer content;
+- incomplete or abbreviated terms remain marked for full-term review.
+
+It does **not** log in, persist a browser profile, normalize offers, clip coupons, or modify an account.
+The earlier Meijer browser and session commands have been removed. Existing Meijer profile data is
+left untouched and remains excluded from Git.
 
 ### Setup
 
@@ -17,27 +39,41 @@ Python 3.12 or newer is required.
 ```powershell
 uv sync --extra dev
 .\.venv\Scripts\Activate.ps1
-meijer-saver --help
+dg-saver --help
 ```
 
-If you prefer not to activate the environment, invoke its commands directly:
+Activation is optional; commands can be invoked directly:
 
 ```powershell
-.\.venv\Scripts\meijer-saver --help
+.\.venv\Scripts\dg-saver --help
+.\.venv\Scripts\dg-saver config show
+.\.venv\Scripts\dg-saver config init
+.\.venv\Scripts\dg-saver probe fixtures
+.\.venv\Scripts\dg-saver offers fixtures
 ```
 
-Alternatively, create a Python 3.12 virtual environment and install the editable `dev` extra with
-pip.
+By default, Windows application data is stored under `%LOCALAPPDATA%\dg-saver`. For tests or
+demonstrations, configuration commands accept `--data-dir PATH`.
 
-Initialize local application data:
+### Preferred store
+
+Save the store label you expect Dollar General to display:
 
 ```powershell
-.\.venv\Scripts\meijer-saver config show
-.\.venv\Scripts\meijer-saver config init
+.\.venv\Scripts\dg-saver store set "Westland, MI"
+.\.venv\Scripts\dg-saver store show
 ```
 
-By default, Windows data is stored beneath `%LOCALAPPDATA%\meijer-saver`. For disposable tests or
-demonstrations, `config show` and `config init` accept `--data-dir PATH`.
+The preference is stored at `%LOCALAPPDATA%\dg-saver\dg-saver.preferences.json`. The filename and
+the entire `.dg-saver` project-local directory are explicitly ignored by Git. `store clear` removes
+only this preferences file.
+
+During `probe live` and `offers live`, DG Saver parses the configured full address, opens Dollar
+General's official city store directory, requires exactly one matching address, and obtains its
+store number. It applies that official directory result as the ephemeral guest in-store preference,
+then reads the Dollar General header back. A missing, ambiguous, or mismatched result fails closed
+before scanning. The verified label is included in the output report. Store choice remains in
+memory only for that browser run; no persistent Chrome profile is created.
 
 ### Verification
 
@@ -48,73 +84,68 @@ demonstrations, `config show` and `config init` accept `--data-dir PATH`.
 
 ## Security boundaries
 
-- Credentials, payment information, and authentication tokens never belong in configuration or
-  application tables.
-- The future dedicated Chrome profile is sensitive local data and is excluded from Git.
-- Browser fixtures must be synthetic or sanitized and must not include authenticated screenshots.
-- All future account-changing actions require an explicit preview and approval.
-- Checkout will remain human-controlled.
+- Credentials, cookies, tokens, payment information, addresses, and account identifiers never
+  belong in configuration, logs, fixtures, reports, or application tables.
+- Browser fixtures must be synthetic or sanitized; authenticated screenshots are prohibited.
+- Any future coupon clipping or account mutation must show an exact preview and require approval.
+- CAPTCHA, MFA, bot protection, access controls, and retailer restrictions must not be bypassed.
+- Checkout and payment submission remain human-controlled.
+- Personal application data remains outside Git and ordinary project backups.
+- The preferred-store file contains location information, stays under the private data directory,
+  and is explicitly ignored as `dg-saver.preferences.json` if placed in the repository.
 
-## Dedicated Chrome and login
+## Phase 1 live probe
 
-Set up the isolated profile outside Playwright first:
-
-```powershell
-meijer-saver browser setup
-```
-
-This opens ordinary Chrome and Bitwarden's official Chrome download page. Do not create another
-Chrome person/profile inside the window: the isolated `Default` subprofile is already Coop's entire
-dedicated profile. Install Bitwarden, unlock it, optionally pin it, and then close all windows from
-that dedicated Chrome instance.
-
-Start the automated login flow afterward:
+Run the live check explicitly:
 
 ```powershell
-meijer-saver login
+.\.venv\Scripts\dg-saver probe live
 ```
 
-Choose your Meijer credential in Bitwarden and complete MFA or CAPTCHA yourself. Meijer Saver does
-not attach to Chrome, inspect the page, read password fields, click Bitwarden controls, or claim that
-authentication succeeded. It opens Meijer's homepage rather than a deep account link; navigate to
-Sign In normally. Once you are finished, close all dedicated Chrome windows and explicitly confirm
-whether login succeeded. A failed or denied attempt is not recorded. Chrome retains its session and
-extension only inside the dedicated profile shown by `meijer-saver config show`.
+The command opens installed Chrome in headed mode with a new ephemeral context, visits only the
+public coupon and weekly-ad URLs, counts structural signals, and closes the context. Do not sign in
+to the probe window. A successful result demonstrates that public read-only browser extraction is
+currently feasible; it is not permission from Dollar General and is not a guarantee that the site
+will remain unchanged.
 
-Session commands:
+Known limitations:
+
+- the coupon probe repeatedly uses `Load more`, verifies growth after every batch, and succeeds only
+  when the loaded count exactly matches the advertised total and the control is gone;
+- coupon terms, eligible products, stacking, and expiration dates are not yet normalized;
+- weekly-ad offers are counted but not parsed or associated with a selected store;
+- the probe does not evaluate robots.txt or retailer terms as authorization for later automation;
+- live access may vary by network, region, browser version, and future site changes.
+
+## Phase 2 offer extraction
+
+Run offline normalization first, then explicitly run the live extraction:
 
 ```powershell
-meijer-saver session check
-meijer-saver session logout
-meijer-saver session clear
+.\.venv\Scripts\dg-saver offers fixtures
+.\.venv\Scripts\dg-saver offers live
 ```
 
-`session clear` previews the exact path and requires confirmation. It refuses to remove an existing
-directory without Meijer Saver's ownership marker, and it rejects normal Chrome and Edge user-data
-paths. Clearing removes Meijer cookies and the Bitwarden extension data stored in this dedicated
-profile, so the extension must be configured again next time.
+The default JSON reports are written under `.dg-saver/reports`, which is ignored by Git. Use
+`--output PATH` to choose another location. The live command uses two headed ephemeral browser
+contexts—one for the fully expanded coupon gallery and one for the embedded weekly-ad viewer—and
+closes both without signing in.
 
-Close any Chrome window using the dedicated profile before running these commands. `session check`
-reports only whether the isolated profile exists and whether a manual login flow was previously
-completed. It intentionally does not verify current Meijer authentication. `session logout` opens
-ordinary Chrome for a manual logout and then removes the local completion marker.
+Phase 2 intentionally does not claim that gallery summaries are complete legal terms. Many cards
+link to separate detail pages, and weekly-ad item controls may omit fine print. Every extracted
+record therefore carries `full_terms_review_required: true`; fields that cannot be normalized
+reliably remain `null` with a review reason. Phase 2 does not rank deals, infer stacking, select a
+store, clip coupons, or access an account.
 
-Meijer denied access when opened under Playwright automation, so Phase 2 deliberately stops at this
-manual-only boundary. Later phases must not attach automation to Meijer unless Meijer provides or
-confirms a supported integration method.
+## Review gate and rollback
 
-## Phase 2 review checklist
+Review Phase 2 by running `offers fixtures`, inspecting its JSON, then explicitly running
+`offers live`. Confirm that advertised and extracted coupon counts match, weekly offers are
+nonzero, the browser closes, and no sign-in occurs. Run tests and lint before accepting Phase 2.
 
-- Confirm the CLI naming and output are comfortable.
-- Confirm the default local data location is acceptable.
-- Run `login`, unlock Bitwarden manually, sign into Meijer, and close dedicated Chrome.
-- Run `session check` and confirm it reports manual completion without claiming authentication.
-- Run `session logout`, sign out manually, and confirm the local completion marker is cleared.
-- Optionally run `session clear` and confirm the displayed path before approving deletion.
-- Approve Phase 2 before implementation begins on read-only Meijer scanning.
+`config init` creates only the exact data directory displayed by `config show`. To roll back a test
+initialization, remove only the explicit disposable directory supplied with `--data-dir`. Uninstall
+the editable CLI by removing `.venv` or by resynchronizing the environment from another project.
 
-## Rollback
-
-The foundation creates local data only when `config init` is run. Use `session clear` to safely
-remove the marked dedicated Chrome profile. To roll back a test initialization, remove only the
-exact directory passed with `--data-dir`; do not remove a shared parent directory.
+To roll back Phase 2, remove `offers.py`, its tests and JSON fixtures, and the `offers` CLI
+registration. Phase 0 configuration and SQLite data require no migration; Phase 1 remains usable.

@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 .pytest_cache/
+pytest-cache-files-*/
 .ruff_cache/
 .uv-cache/
 *.py[cod]
@@ -9,6 +10,8 @@ __pycache__/
 
 # Personal application data and authenticated browser state
 .meijer-saver/
+.dg-saver/
+dg-saver.preferences.json
 data/
 reports/
 browser-profile/

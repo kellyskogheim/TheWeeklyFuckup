@@ -1,0 +1,18 @@
+[
+  {
+    "tag": "DIGITAL COUPON",
+    "brand": "Example Paper",
+    "summary": "SAVE $1.50",
+    "description": "on any TWO (2) qualifying packages",
+    "badges": ["12/31/49", "MUST BUY 2", "MANUFACTURER"],
+    "image_alt": "Coupon for Example Paper SAVE $1.50"
+  },
+  {
+    "tag": "CASH BACK",
+    "brand": "Example Soap",
+    "summary": "Earn $0.75",
+    "description": "8 oz only",
+    "badges": ["LIMIT 5", "DG STORE"],
+    "image_alt": "Coupon for Example Soap Earn $0.75"
+  }
+]

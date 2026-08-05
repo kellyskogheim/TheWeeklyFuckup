@@ -5,13 +5,13 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-APP_DIRECTORY_NAME = "meijer-saver"
+APP_DIRECTORY_NAME = "dg-saver"
 
 
 def default_data_directory() -> Path:
     """Return a user-local data directory without consulting credential-like variables."""
     local_app_data = os.environ.get("LOCALAPPDATA")
-    base = Path(local_app_data) if local_app_data else Path.cwd() / ".meijer-saver"
+    base = Path(local_app_data) if local_app_data else Path.cwd()
     return base / APP_DIRECTORY_NAME
 
 
@@ -21,16 +21,15 @@ class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     data_directory: Path = Field(default_factory=default_data_directory)
-    organic_premium_cap: float = Field(default=0.25, ge=0, le=2)
 
     @property
     def database_path(self) -> Path:
-        return self.data_directory / "meijer-saver.sqlite3"
+        return self.data_directory / "dg-saver.sqlite3"
 
     @property
     def reports_directory(self) -> Path:
         return self.data_directory / "reports"
 
     @property
-    def browser_profile_directory(self) -> Path:
-        return self.data_directory / "chrome-profile"
+    def store_preferences_path(self) -> Path:
+        return self.data_directory / "dg-saver.preferences.json"

@@ -3,9 +3,9 @@ requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "meijer-saver"
-version = "0.2.0"
-description = "A local, human-in-the-loop Meijer savings assistant."
+name = "dg-saver"
+version = "0.1.0"
+description = "A local, human-in-the-loop Dollar General savings assistant."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -23,13 +23,13 @@ dev = [
 ]
 
 [project.scripts]
-meijer-saver = "meijer_saver.cli:app"
+dg-saver = "dg_saver.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/meijer_saver"]
+packages = ["src/dg_saver"]
 
 [tool.pytest.ini_options]
-addopts = "-q --basetemp=.meijer-saver/pytest-tmp -p no:cacheprovider"
+addopts = "-q --basetemp=.dg-saver/pytest-tmp -p no:cacheprovider"
 testpaths = ["tests"]
 
 [tool.ruff]

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from meijer_saver.database import SCHEMA_VERSION, initialize_database, read_schema_version
+from dg_saver.database import SCHEMA_VERSION, initialize_database, read_schema_version
 
 
 def test_database_initialization_is_idempotent(tmp_path: Path) -> None:
@@ -14,4 +14,3 @@ def test_database_initialization_is_idempotent(tmp_path: Path) -> None:
 
 def test_missing_database_has_no_schema_version(tmp_path: Path) -> None:
     assert read_schema_version(tmp_path / "missing.sqlite3") is None
-
