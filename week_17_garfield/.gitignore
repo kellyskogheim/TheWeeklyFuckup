@@ -1,0 +1,9 @@
+credentials.json
+token*.json
+.env
+__pycache__/
+.uv-cache/
+garden/*
+garden.db
+garden.db-shm
+garden.db-wal
